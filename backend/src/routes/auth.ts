@@ -264,4 +264,98 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
         newPassword: t.String({ minLength: 8 }),
       }),
     }
+  )
+
+  // Google OAuth - sign in / sign up
+  .post(
+    '/google',
+    async ({ body, jwt }) => {
+      try {
+        const { googleId, email, username } = body as {
+          googleId: string;
+          email: string;
+          username: string;
+        };
+
+        if (!googleId || !email) {
+          throw new ApiError(400, 'Google ID and email are required');
+        }
+
+        // Check if user already exists with this email
+        let user = await User.findOne({ email: email.toLowerCase() });
+
+        if (user) {
+          // Email already exists - check auth method
+          if (user.authMethod === 'email' && !user.googleId) {
+            // User signed up with email, not allowed to sign in with Google
+            throw new ApiError(409, 'This email is already registered. Please sign in with your password.');
+          }
+
+          // User exists and either has Google auth or already linked Google
+          if (!user.googleId) {
+            user.googleId = googleId;
+            await user.save();
+          }
+        } else {
+          // New user - create with Google auth
+          if (!username) {
+            throw new ApiError(400, 'Username is required for new accounts');
+          }
+
+          // Check if username exists
+          const existingUsername = await User.findOne({ username });
+          if (existingUsername) {
+            throw new ApiError(409, 'Username already exists');
+          }
+
+          user = await User.create({
+            email: email.toLowerCase(),
+            googleId,
+            username,
+            authMethod: 'google',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          });
+        }
+
+        // Generate JWT token
+        const token = await jwt.sign({
+          userId: user._id.toString(),
+          email: user.email,
+        });
+
+        return {
+          statusCode: 200,
+          success: true,
+          message: user.authMethod === 'google' && user.googleId ? 'Google sign in successful' : 'Google linked successfully',
+          data: {
+            user: sanitizeUser(user),
+            token,
+          },
+        };
+      } catch (error: any) {
+        if (error instanceof ApiError) {
+          return {
+            statusCode: error.statusCode,
+            success: false,
+            message: error.message,
+            data: null,
+          };
+        }
+        console.error('Google auth error:', error);
+        return {
+          statusCode: 500,
+          success: false,
+          message: 'Google authentication failed',
+          data: error.message,
+        };
+      }
+    },
+    {
+      body: t.Object({
+        googleId: t.String(),
+        email: t.String({ format: 'email' }),
+        username: t.Optional(t.String({ minLength: 3 })),
+      }),
+    }
   );
+

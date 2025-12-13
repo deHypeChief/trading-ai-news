@@ -4,9 +4,11 @@ import bcryptjs from 'bcryptjs';
 interface IUser {
   _id?: string;
   email: string;
-  password: string;
+  password?: string;
   username: string;
   timezone: string;
+  googleId?: string;
+  authMethod: 'email' | 'google';
   trackedInstruments: string[];
   alertSettings: {
     emailAlerts: boolean;
@@ -38,13 +40,21 @@ const userSchema = new mongoose.Schema<IUser>(
     },
     password: {
       type: String,
-      required: true,
       minlength: 6,
     },
     username: {
       type: String,
       required: true,
       unique: true,
+    },
+    googleId: {
+      type: String,
+      sparse: true,
+    },
+    authMethod: {
+      type: String,
+      enum: ['email', 'google'],
+      default: 'email',
     },
     timezone: {
       type: String,

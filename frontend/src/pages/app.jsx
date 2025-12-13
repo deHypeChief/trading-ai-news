@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 import LandingPage from "./landing";
 import SignupPage from "./auth/signup";
 import LoginPage from "./auth/login";
@@ -13,9 +14,12 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { AuthProvider } from "@/contexts/AuthContext.jsx";
 
 export default function App() {
+    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
     return (
-        <BrowserRouter>
-            <AuthProvider>
+        <GoogleOAuthProvider clientId={googleClientId}>
+            <BrowserRouter>
+                <AuthProvider>
                 <Routes>
                     {/* Public Routes */}
                     <Route path="/" element={<LandingPage />} />
@@ -66,7 +70,8 @@ export default function App() {
                         }
                     />
                 </Routes>
-            </AuthProvider>
-        </BrowserRouter>
+                </AuthProvider>
+            </BrowserRouter>
+        </GoogleOAuthProvider>
     )
 }

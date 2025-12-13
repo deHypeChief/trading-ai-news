@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
-import { Zap, Calendar, LogOut, Clock3, ChevronLeft, ChevronRight, AlertCircle, Filter, Menu, X } from 'lucide-react';
+import { Zap, Calendar, LogOut, Clock3, ChevronLeft, ChevronRight, AlertCircle, Filter, Menu, X, User, Settings } from 'lucide-react';
 
 export default function Dashboard() {
 	const { user, logout } = useAuth();
@@ -22,15 +22,23 @@ export default function Dashboard() {
 	const [events, setEvents] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
+	const [eventsOffset, setEventsOffset] = useState(0);
+	const [hasMoreEvents, setHasMoreEvents] = useState(true);
+	const [loadingMore, setLoadingMore] = useState(false);
+	const eventsLimit = 10;
 
 	// Filters
 	const [selectedCurrency, setSelectedCurrency] = useState('');
 	const [selectedImpact, setSelectedImpact] = useState('');
+	const [selectedImpactLevels, setSelectedImpactLevels] = useState({ High: true, Medium: true, Low: false });
 	const [minRelevance, setMinRelevance] = useState('');
 	const [currencies, setCurrencies] = useState([]);
+	const [selectedCurrencies, setSelectedCurrencies] = useState({});
 
 	const [selectedEvent, setSelectedEvent] = useState(null);
 	const [menuOpen, setMenuOpen] = useState(false);
+	const [userMenuOpen, setUserMenuOpen] = useState(false);
+	const [showFilters, setShowFilters] = useState(false);
 
 	const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -98,6 +106,43 @@ export default function Dashboard() {
 			}).format(now),
 		[now, userTimezone]
 	);
+
+	// TradingView Ticker Tape Widget
+	useEffect(() => {
+		const script = document.createElement('script');
+		script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js';
+		script.async = true;
+		script.innerHTML = JSON.stringify({
+			symbols: [
+				{ proName: "FOREXCOM:SPXUSD", title: "S&P 500" },
+				{ proName: "FOREXCOM:NSXUSD", title: "US 100" },
+				{ proName: "FX_IDC:EURUSD", title: "EUR/USD" },
+				{ proName: "FX_IDC:GBPUSD", title: "GBP/USD" },
+				{ proName: "FX_IDC:USDJPY", title: "USD/JPY" },
+				{ proName: "FX_IDC:USDCHF", title: "USD/CHF" },
+				{ proName: "FX_IDC:AUDUSD", title: "AUD/USD" },
+				{ proName: "FX_IDC:USDCAD", title: "USD/CAD" },
+				{ proName: "BITSTAMP:BTCUSD", title: "Bitcoin" },
+				{ proName: "BITSTAMP:ETHUSD", title: "Ethereum" }
+			],
+			showSymbolLogo: true,
+			colorTheme: "light",
+			isTransparent: false,
+			displayMode: "adaptive",
+			locale: "en"
+		});
+
+		const container = document.querySelector('.tradingview-widget-container__widget');
+		if (container) {
+			container.appendChild(script);
+		}
+
+		return () => {
+			if (container && script.parentNode) {
+				container.removeChild(script);
+			}
+		};
+	}, []);
 
 	const formatDateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -199,18 +244,27 @@ export default function Dashboard() {
 		}
 	};
 
-	const fetchEvents = async () => {
+	const fetchEvents = async (loadMore = false) => {
 		try {
-			setLoading(true);
+			if (loadMore) {
+				setLoadingMore(true);
+			} else {
+				setLoading(true);
+				setEventsOffset(0);
+			}
+
 			const params = new URLSearchParams();
 
-			// Date range: next 7 days
+			// Date range: from today midnight for next 7 days
 			const startDate = new Date();
-			const endDate = new Date();
+			startDate.setHours(0, 0, 0, 0);
+			const endDate = new Date(startDate);
 			endDate.setDate(endDate.getDate() + 7);
 
 			params.append('startDate', startDate.toISOString());
 			params.append('endDate', endDate.toISOString());
+			params.append('limit', eventsLimit.toString());
+			params.append('offset', (loadMore ? eventsOffset : 0).toString());
 
 			if (selectedCurrency) params.append('currency', selectedCurrency);
 			if (selectedImpact) params.append('impact', selectedImpact);
@@ -220,7 +274,30 @@ export default function Dashboard() {
 			const data = await response.json();
 
 			if (data.success) {
-				setEvents(data.data.events);
+				const newEvents = data.data.events;
+				const currentOffset = loadMore ? eventsOffset : 0;
+
+				if (loadMore) {
+					setEvents(prev => [...prev, ...newEvents]);
+				} else {
+					setEvents(newEvents);
+				}
+
+				const newOffset = currentOffset + newEvents.length;
+				setEventsOffset(newOffset);
+
+				// Check if there are more events to load
+				const hasMore = newOffset < data.data.total;
+				console.log('📊 Events Pagination:', {
+					loadMore,
+					newEventsCount: newEvents.length,
+					currentOffset,
+					newOffset,
+					totalEvents: data.data.total,
+					hasMore,
+					eventsLimit
+				});
+				setHasMoreEvents(hasMore);
 			} else {
 				setError(data.message);
 			}
@@ -228,7 +305,17 @@ export default function Dashboard() {
 			setError('Failed to fetch calendar events');
 			console.error(err);
 		} finally {
-			setLoading(false);
+			if (loadMore) {
+				setLoadingMore(false);
+			} else {
+				setLoading(false);
+			}
+		}
+	};
+
+	const handleLoadMore = () => {
+		if (!loadingMore && hasMoreEvents) {
+			fetchEvents(true);
 		}
 	};
 
@@ -291,15 +378,6 @@ export default function Dashboard() {
 		}, {});
 	}, [events]);
 
-	const historicalHint = (event) => {
-		const hasHighImpact = event.impact === 'High';
-		const highScore = (event.aiRelevanceScore || 0) >= 60;
-		if (hasHighImpact || highScore) {
-			return `Historically, high-impact releases like this often come with heightened volatility and can lean bullish for ${event.currency || 'the currency'} when the print beats forecasts, and bearish when it misses. Treat this as context, not a certainty.`;
-		}
-		return `Past releases of this type tend to move gradually, with a mild bullish bias on upside surprises and softening when data disappoints. Use this as color only, not a guarantee.`;
-	};
-
 	const formatDateTime = (dateString) => {
 		const date = new Date(dateString);
 		return date.toLocaleString('en-US', {
@@ -313,9 +391,9 @@ export default function Dashboard() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gray-50">
+		<div className="min-h-screen bg-gray-50" style={{ zoom: '90%' }}>
 			{/* Navigation */}
-			<nav className="bg-white border-b relative">
+			<nav className="bg-white border-b fixed top-0 left-0 right-0 z-50">
 				<div className=" mx-auto px-4 sm:px-6 lg:px-8">
 					<div className="flex justify-between items-center h-16">
 						<div className="flex items-center gap-2">
@@ -327,16 +405,40 @@ export default function Dashboard() {
 								<Menu className="h-6 w-6" />
 							</button>
 							<div className="hidden sm:flex items-center gap-3">
-								<div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs sm:text-sm font-medium">
-									<Clock3 className="h-4 w-4" />
-									<span>{timeString}</span>
-									<span className="text-xs text-blue-500">{userTimezone}</span>
+								<div className="relative">
+									<button
+										onClick={() => setUserMenuOpen(!userMenuOpen)}
+										className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+										aria-label="User settings"
+									>
+										<User className="h-5 w-5 text-gray-700" />
+									</button>
+									{userMenuOpen && (
+										<>
+											<div className="fixed inset-0 z-10" onClick={() => setUserMenuOpen(false)} />
+											<div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-20 py-1">
+												<div className="px-4 py-2 border-b">
+													<p className="text-sm font-medium text-gray-900">{user?.username || 'User'}</p>
+													<p className="text-xs text-gray-500">{user?.email || ''}</p>
+												</div>
+												<button
+													onClick={() => { setUserMenuOpen(false); navigate('/settings'); }}
+													className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+												>
+													<Settings className="h-4 w-4" />
+													Settings
+												</button>
+												<button
+													onClick={() => { setUserMenuOpen(false); handleLogout(); }}
+													className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center gap-2"
+												>
+													<LogOut className="h-4 w-4" />
+													Logout
+												</button>
+											</div>
+										</>
+									)}
 								</div>
-								<span className="text-gray-700 text-sm">{user?.username || 'User'}</span>
-								<Button variant="ghost" size="sm" onClick={handleLogout}>
-									<LogOut className="h-4 w-4 mr-2" />
-									Logout
-								</Button>
 							</div>
 						</div>
 					</div>
@@ -363,8 +465,24 @@ export default function Dashboard() {
 				)}
 			</nav>
 
+			{/* TradingView Ticker Tape */}
+			<div className="bg-white border-b fixed top-16 left-0 right-0 z-40">
+				<div className="flex items-center">
+					<div className="flex-1 overflow-hidden">
+						<div className="tradingview-widget-container" style={{ height: '46px' }}>
+							<div className="tradingview-widget-container__widget"></div>
+						</div>
+					</div>
+					<div className="px-4 py-2 border-l bg-gray-50 flex items-center gap-2 min-w-fit">
+						<Clock3 className="h-4 w-4 text-gray-600" />
+						<span className="text-sm font-medium text-gray-700">{timeString}</span>
+						<span className="text-xs text-gray-500">{userTimezone}</span>
+					</div>
+				</div>
+			</div>
+
 			{/* Main Content */}
-			<div className=" mx-auto px-4 sm:px-6 lg:px-8 py-8">
+			<div className=" mx-auto px-4 sm:px-6 lg:px-8 py-8" style={{ paddingTop: '130px' }}>
 				{/* Primary layout matching sketch */}
 				<div className='relative grid grid-cols-[2fr_1fr] gap-6 '>
 
@@ -373,49 +491,156 @@ export default function Dashboard() {
 						<div className="bg-white rounded-lg shadow-sm w-full">
 							<div className='w-full flex flex-col sm:flex-row justify-between items-start sm:items-center p-6 gap-4 sm:gap-0'>
 								<div className="flex-1">
-									<h2 className="text-xl font-bold">Economic Events (Next 7 Days)</h2>
-									<p className="text-sm text-gray-600 mt-1">
-										{events.length} events found
-									</p>
+									<h2 className="text-lg font-bold">Economic Events</h2>
 								</div>
 								<div className='flex flex-col sm:flex-row gap-2 sm:gap-5'>
-									<div>
-										{/* <label className="block text-sm font-medium text-gray-700 mb-2">
-										Currency
-									</label> */}
-										<select
-											value={selectedCurrency}
-											onChange={(e) => setSelectedCurrency(e.target.value)}
-											className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-										>
-											<option value="">All Currencies</option>
-											{currencies.map((currency) => (
-												<option key={currency} value={currency}>
-													{currency}
-												</option>
-											))}
-										</select>
-									</div>
-
-									<div>
-										{/* <label className="block text-sm font-medium text-gray-700 mb-2">
-										Impact Level
-									</label> */}
-										<select
-											value={selectedImpact}
-											onChange={(e) => setSelectedImpact(e.target.value)}
-											className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-										>
-											<option value="">All Impacts</option>
-											<option value="High">High</option>
-											<option value="Medium">Medium</option>
-											<option value="Low">Low</option>
-										</select>
-									</div>
+									<button
+										className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium"
+										onClick={() => setShowFilters(!showFilters)}
+									>
+										<Filter className="h-4 w-4 inline mr-2" />
+										Filters
+									</button>
 								</div>
 							</div>
 
-							{loading ? (
+							{/* Filter Panel - Forex Factory Style */}
+							{showFilters && (
+								<div className="border-t  px-6 py-8">
+									<div className="space-y-4 gap-8 max-w-6xl">
+										<div className='gap-3 flex'>
+											{/* Expected Impact */}
+											<div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+												<div className="flex items-center justify-between mb-4">
+													<h3 className="font-semibold text-gray-900 text-base">Expected Impact</h3>
+													<div className="flex gap-3">
+														<button
+															onClick={() => setSelectedImpactLevels({ High: true, Medium: true, Low: false })}
+															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+														>
+															all
+														</button>
+														<span className="text-gray-300">|</span>
+														<button
+															onClick={() => setSelectedImpactLevels({ High: false, Medium: false, Low: false })}
+															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+														>
+															none
+														</button>
+													</div>
+												</div>
+												<div className="flex flex-wrap gap-4">
+													<label className="flex items-center gap-3 cursor-pointer group">
+														<div className="relative">
+															<input
+																type="checkbox"
+																checked={selectedImpactLevels.High}
+																onChange={(e) => setSelectedImpactLevels({ ...selectedImpactLevels, High: e.target.checked })}
+																className="w-5 h-5 accent-red-600"
+															/>
+														</div>
+														<div className="flex items-center gap-2">
+															<span className="w-5 h-5 bg-red-600 rounded-md"></span>
+															<span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">High</span>
+														</div>
+													</label>
+													<label className="flex items-center gap-3 cursor-pointer group">
+														<div className="relative">
+															<input
+																type="checkbox"
+																checked={selectedImpactLevels.Medium}
+																onChange={(e) => setSelectedImpactLevels({ ...selectedImpactLevels, Medium: e.target.checked })}
+																className="w-5 h-5 accent-orange-500"
+															/>
+														</div>
+														<div className="flex items-center gap-2">
+															<span className="w-5 h-5 bg-orange-500 rounded-md"></span>
+															<span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">Medium</span>
+														</div>
+													</label>
+													<label className="flex items-center gap-3 cursor-pointer group">
+														<div className="relative">
+															<input
+																type="checkbox"
+																checked={selectedImpactLevels.Low}
+																onChange={(e) => setSelectedImpactLevels({ ...selectedImpactLevels, Low: e.target.checked })}
+																className="w-5 h-5 accent-yellow-500"
+															/>
+														</div>
+														<div className="flex items-center gap-2">
+															<span className="w-5 h-5 bg-yellow-500 rounded-md"></span>
+															<span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">Low</span>
+														</div>
+													</label>
+												</div>
+											</div>
+
+											{/* Currencies */}
+											<div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+												<div className="flex items-center justify-between mb-4">
+													<h3 className="font-semibold text-gray-900 text-base">Currencies</h3>
+													<div className="flex gap-3">
+														<button
+															onClick={() => setSelectedCurrencies(['AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP', 'JPY', 'NZD', 'USD'].reduce((acc, c) => ({ ...acc, [c]: true }), {}))}
+															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+														>
+															all
+														</button>
+														<span className="text-gray-300">|</span>
+														<button
+															onClick={() => setSelectedCurrencies({})}
+															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+														>
+															none
+														</button>
+													</div>
+												</div>
+												<div className="flex items-center gap-3">
+													{['AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP', 'JPY', 'NZD', 'USD'].map((curr) => (
+														<label key={curr} className="flex items-center gap-3 cursor-pointer group">
+															<input
+																type="checkbox"
+																checked={selectedCurrencies[curr] || false}
+																onChange={(e) => setSelectedCurrencies({ ...selectedCurrencies, [curr]: e.target.checked })}
+																className="w-5 h-5 accent-blue-600"
+															/>
+															<span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{curr}</span>
+														</label>
+													))}
+												</div>
+											</div>
+										</div>
+
+										{/* Action Buttons */}
+										<div className="space-x-4 flex justify-end">
+											<button
+												onClick={() => {
+													const impactStr = Object.entries(selectedImpactLevels)
+														.filter(([, v]) => v)
+														.map(([k]) => k)
+														.join(',');
+													setSelectedImpact(impactStr);
+													const currStr = Object.entries(selectedCurrencies)
+														.filter(([, v]) => v)
+														.map(([k]) => k)
+														.join(',');
+													setSelectedCurrency(currStr);
+													setShowFilters(false);
+												}}
+												className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 transition-all shadow-sm hover:shadow-md"
+											>
+												Apply Filter
+											</button>
+											<button
+												onClick={() => setShowFilters(false)}
+												className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
+											>
+												Cancel
+											</button>
+										</div>
+									</div>
+								</div>
+							)}							{loading ? (
 								<div className="p-12 text-center">
 									<div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
 									<p className="text-gray-600 mt-4">Loading events...</p>
@@ -438,7 +663,6 @@ export default function Dashboard() {
 												<th className="px-4 py-3 text-left font-semibold">Date / Time</th>
 												<th className="px-4 py-3 text-left font-semibold">Event</th>
 												<th className="px-4 py-3 text-left font-semibold">Impact</th>
-												<th className="px-4 py-3 text-left font-semibold">Currency</th>
 												<th className="px-4 py-3 text-left font-semibold">Previous</th>
 												<th className="px-4 py-3 text-left font-semibold">Forecast</th>
 												<th className="px-4 py-3 text-left font-semibold">Actual</th>
@@ -448,7 +672,7 @@ export default function Dashboard() {
 											{Object.entries(groupedEvents).map(([dayLabel, dayEvents]) => (
 												<>
 													<tr key={dayLabel} className="bg-gray-100">
-														<td colSpan={7} className="px-4 py-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">{dayLabel}</td>
+														<td colSpan={6} className="px-4 py-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">{dayLabel}</td>
 													</tr>
 													{dayEvents.map((event) => {
 														const isExpanded = expandedEventId === event._id;
@@ -463,7 +687,12 @@ export default function Dashboard() {
 																		<div className="text-xs text-gray-600">{formatTime(event.eventDateTime)}</div>
 																	</td>
 																	<td className="px-4 py-3 max-w-xs">
-																		<div className="font-semibold text-gray-900 line-clamp-2">{event.eventName}</div>
+																		<div className="flex items-center gap-2 mb-1">
+																			<span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
+																				{event.currency}
+																			</span>
+																			<span className="font-semibold text-gray-900">{event.eventName}</span>
+																		</div>
 																		<div className="text-xs text-gray-500">{event.country}</div>
 																	</td>
 																	<td className="px-4 py-3">
@@ -471,16 +700,13 @@ export default function Dashboard() {
 																			{event.impact}
 																		</span>
 																	</td>
-																	<td className="px-4 py-3 text-gray-800">
-																		<div className="font-medium">{event.currency}</div>
-																	</td>
 																	<td className="px-4 py-3 text-gray-800">{event.previous ?? '—'}</td>
 																	<td className="px-4 py-3 text-gray-800">{event.forecast ?? '—'}</td>
 																	<td className="px-4 py-3 text-gray-800">{event.actual ?? '—'}</td>
 																</tr>
 																{isExpanded && (
 																	<tr className="bg-white" key={`${event._id}-expanded`}>
-																		<td colSpan={7} className="px-4 py-4">
+																		<td colSpan={6} className="px-4 py-4">
 																			<div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 space-y-3">
 																				{event.aiSummary ? (
 																					<div>
@@ -532,12 +758,25 @@ export default function Dashboard() {
 											))}
 										</tbody>
 									</table>
+
+									{/* Load More Button */}
+									{hasMoreEvents && (
+										<div className="flex justify-center py-6">
+											<Button
+												onClick={handleLoadMore}
+												disabled={loadingMore}
+												variant="outline"
+												size="lg"
+											>
+												{loadingMore ? 'Loading...' : 'Load More Events'}
+											</Button>
+										</div>
+									)}
 								</div>
 							)}
 						</div>
 					</div>
-
-					<div className="md:sticky space-y-6 h-fit top-4">
+					<div className="md:sticky space-y-6 h-fit top-32">
 						<div className="bg-white rounded-lg shadow p-4 h-fit">
 							<div className="flex items-center justify-between mb-3">
 								<button
@@ -548,7 +787,7 @@ export default function Dashboard() {
 									<ChevronLeft className="h-4 w-4" />
 								</button>
 								<div className="text-center">
-									<p className="text-xs text-gray-500">Local time</p>
+									{/* <p className="text-xs text-gray-500">Local time</p> */}
 									<p className="text-sm font-semibold text-gray-800">{monthLabel}</p>
 								</div>
 								<button
@@ -595,8 +834,8 @@ export default function Dashboard() {
 						<div className="bg-white rounded-lg shadow p-5 h-fit">
 							<div className="flex items-center justify-between mb-3">
 								<div>
-									<h3 className="text-lg font-semibold text-gray-900">Hot Stories</h3>
-									<p className="text-sm text-gray-600">Curated market-moving headlines</p>
+									<h3 className="text-sm font-semibold text-gray-900">Hot Stories</h3>
+									<p className="text-xs text-gray-600">Curated market-moving headlines</p>
 								</div>
 								<div className="flex items-center gap-2">
 									<Button
@@ -628,22 +867,22 @@ export default function Dashboard() {
 										const storyTime = formatTime(story.newsPublishedAt || story.eventDateTime);
 										const storyDate = formatDate(story.newsPublishedAt || story.eventDateTime);
 										return (
-											<div key={`${story._id || story.eventId}-${idx}`} className="p-4 border rounded-lg bg-gray-50">
+											<div key={`${story._id || story.eventId}-${idx}`} className="p-4 border rounded-lg bg-gray-50 cursor-pointer" onClick={() => setModalEvent(story)}>
 												<div className="flex items-center justify-between mb-2">
 													<div className={`px-2 py-1 rounded-full text-xs font-medium inline-block ${impactColor[story.impact] || 'bg-gray-100 text-gray-700'}`}>
 														{story.impact} impact
 													</div>
 													<span className="text-xs text-gray-500">{story.currency} • {storyTime}</span>
 												</div>
-												<p className="font-semibold text-gray-900 mb-1">{story.newsHeadline || story.eventName}</p>
-												<p className="text-sm text-gray-700 line-clamp-3 mb-2">{story.aiSummary || 'No AI summary available yet.'}</p>
+												<p className="font-semibold text-sm text-gray-900 mb-1">{story.newsHeadline || story.eventName}</p>
+												<p className="text-xs text-gray-700 line-clamp-3 mb-2">{story.aiSummary || 'No AI summary available yet.'}</p>
 												<p className="text-xs text-gray-500">{story.newsSource || 'Calendar'} • {storyDate}</p>
-												{/* <div className="mt-3 flex items-center gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setSelectedDate(formatDateKey(new Date(story.eventDateTime)))}>
-                            Jump to date
-                          </Button>
-                          <Button size="sm" onClick={() => setModalEvent(story)}>Open story</Button>
-                        </div> */}
+												<div className="mt-3 flex items-center gap-2">
+													{/* <Button size="sm" variant="outline" onClick={() => setSelectedDate(formatDateKey(new Date(story.eventDateTime)))}>
+														Jump to date
+													</Button> */}
+													{/* <Button size="sm" onClick={() => setModalEvent(story)}>Open story</Button> */}
+												</div>
 											</div>
 										);
 									})}

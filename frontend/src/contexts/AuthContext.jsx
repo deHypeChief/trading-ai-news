@@ -58,6 +58,45 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const googleAuth = async (googleId, email, username = null) => {
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/auth/google`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            googleId, 
+            email, 
+            ...(username && { username })
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Google authentication failed');
+      }
+
+      const data = await response.json();
+
+      if (data.data?.user && data.data?.token) {
+        const normalizedUser = normalizeUser(data.data.user);
+        setUser(normalizedUser);
+        setToken(data.data.token);
+        localStorage.setItem('authToken', data.data.token);
+        localStorage.setItem('authUser', JSON.stringify(normalizedUser));
+      }
+    } catch (error) {
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const register = async (email, username, password) => {
     setLoading(true);
     try {
@@ -114,6 +153,7 @@ export const AuthProvider = ({ children }) => {
         token,
         loading,
         login,
+        googleAuth,
         register,
         logout,
         updateUser,
