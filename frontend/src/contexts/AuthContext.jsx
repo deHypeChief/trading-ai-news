@@ -38,8 +38,8 @@ export const AuthProvider = ({ children }) => {
       );
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Login failed');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Login failed');
       }
 
       const data = await response.json();
@@ -52,6 +52,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('authUser', JSON.stringify(normalizedUser));
       }
     } catch (error) {
+      console.error('Login error:', error);
       throw error;
     } finally {
       setLoading(false);
@@ -157,6 +158,8 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         updateUser,
+        setUser,
+        setToken,
         isAuthenticated: !!token && !!user,
       }}
     >

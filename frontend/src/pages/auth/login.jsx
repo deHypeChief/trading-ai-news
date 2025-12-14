@@ -59,29 +59,32 @@ export default function LoginPage() {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setServerError('');
+    
+    (async () => {
+      setServerError('');
 
-    if (!validateForm()) {
-      return;
-    }
-
-    try {
-      await login(formData.email, formData.password);
-
-      // Save remember me preference
-      if (rememberMe) {
-        localStorage.setItem('rememberEmail', formData.email);
-      } else {
-        localStorage.removeItem('rememberEmail');
+      if (!validateForm()) {
+        return;
       }
 
-      // Redirect to dashboard on successful login
-      navigate('/dashboard');
-    } catch (error) {
-      setServerError(error.message || 'Login failed. Please check your credentials.');
-    }
+      try {
+        await login(formData.email, formData.password);
+
+        // Save remember me preference
+        if (rememberMe) {
+          localStorage.setItem('rememberEmail', formData.email);
+        } else {
+          localStorage.removeItem('rememberEmail');
+        }
+
+        // Redirect to dashboard on successful login
+        navigate('/dashboard');
+      } catch (error) {
+        setServerError(error.message || 'Login failed. Please check your credentials.');
+      }
+    })();
   };
 
   // Load remembered email on mount
@@ -101,8 +104,7 @@ export default function LoginPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <Zap className="h-8 w-8 text-blue-600" />
-            <span className="text-2xl font-bold">Smart Money Calendar</span>
+            <img src="/smlogo.png" alt="" className='h-10 w-10'/>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
           <p className="text-gray-600">Log in to your account</p>
@@ -190,14 +192,13 @@ export default function LoginPage() {
             </div>
 
             {/* Submit Button */}
-            <Button
+            <button
               type="submit"
               disabled={loading}
-              className="w-full mt-6"
-              size="lg"
+              className="w-full mt-6 bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-lg"
             >
               {loading ? 'Logging in...' : 'Log In'}
-            </Button>
+            </button>
           </form>
 
           {/* Divider */}
@@ -237,17 +238,9 @@ export default function LoginPage() {
 }
 
 function GoogleSignInButton({ setGoogleError, setGoogleLoading, googleLoading }) {
-  const googleLogin = useGoogleAuth(false);
-
-  const handleGoogleClick = async () => {
-    setGoogleError('');
-    setGoogleLoading(true);
-    try {
-      await googleLogin();
-    } catch (error) {
-      setGoogleError(error.message || 'Google sign-in failed');
-      setGoogleLoading(false);
-    }
+  const handleGoogleClick = () => {
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    window.location.href = `${backendUrl}/api/auth/google/login`;
   };
 
   return (

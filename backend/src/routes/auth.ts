@@ -5,6 +5,7 @@ import { validateEmail, validatePassword, sanitizeUser } from '../utils/auth';
 import { ApiError } from '../utils/errors';
 import { sendPasswordResetEmail } from '../services/email';
 import crypto from 'crypto';
+import axios from 'axios';
 
 export const authRoutes = new Elysia({ prefix: '/auth' })
   .post(
@@ -266,7 +267,109 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
     }
   )
 
-  // Google OAuth - sign in / sign up
+  // Google OAuth - initiate
+  .get('/google/login', async ({ set }) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/google/callback`;
+    const scope = 'openid email profile';
+    
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
+    
+    set.status = 302;
+    set.headers['Location'] = authUrl;
+    return;
+  })
+
+  // Google OAuth - callback
+  .get('/google/callback', async ({ query, jwt, set }) => {
+    try {
+      const { code } = query as { code: string };
+      
+      if (!code) {
+        console.error('Google OAuth: No authorization code provided');
+        throw new ApiError(400, 'Authorization code not provided');
+      }
+
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/google/callback`;
+
+      console.log('Google OAuth: Exchanging code for token...');
+      console.log('Client ID:', clientId?.substring(0, 10) + '...');
+      console.log('Redirect URI:', redirectUri);
+
+      // Exchange code for tokens
+      const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      });
+
+      const { access_token } = tokenResponse.data;
+      console.log('Google OAuth: Access token received');
+
+      // Get user info from Google
+      const userInfoResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+
+      console.log('Google OAuth: User info received:', JSON.stringify(userInfoResponse.data, null, 2));
+
+      const { id: googleId, email, name } = userInfoResponse.data;
+
+      if (!googleId || !email) {
+        console.error('Google OAuth: Missing required fields. Got:', { googleId, email, name });
+        throw new ApiError(400, 'Failed to get user info from Google');
+      }
+
+      console.log('Google OAuth: Processing user:', { googleId, email, name });
+
+      // Find or create user
+      let user = await User.findOne({
+        $or: [{ googleId }, { email: email.toLowerCase() }],
+      });
+
+      if (!user) {
+        // Create new user with Google auth
+        const username = name || email.split('@')[0];
+        
+        user = await User.create({
+          email: email.toLowerCase(),
+          googleId,
+          username,
+          authMethod: 'google',
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
+      } else if (!user.googleId) {
+        // Link Google to existing account
+        user.googleId = googleId;
+        user.authMethod = 'google';
+        await user.save();
+      }
+
+      // Generate JWT token
+      const token = await jwt.sign({
+        userId: user._id.toString(),
+        email: user.email,
+      });
+
+      // Redirect to frontend with token
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      set.status = 302;
+      set.headers['Location'] = `${frontendUrl}/auth/google-callback?token=${token}`;
+      return;
+    } catch (error: any) {
+      console.error('Google OAuth callback error:', error);
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      set.status = 302;
+      set.headers['Location'] = `${frontendUrl}/login?error=${encodeURIComponent(error.message || 'Google authentication failed')}`;
+      return;
+    }
+  })
+
+  // Google OAuth - sign in / sign up (old method - keeping for compatibility)
   .post(
     '/google',
     async ({ body, jwt }) => {

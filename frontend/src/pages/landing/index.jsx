@@ -9,13 +9,12 @@ function Navbar() {
             <div className="flex justify-between items-center py-5 px-20">
                 <div className="flex items-center space-x-20">
                     <div className="flex items-center gap-2">
-                        <Zap className="h-6 w-6 text-blue-600" />
+            <img src="/smlogo.png" alt="" className='h-10 w-10'/>
+                     
                         <h1 className="text-2xl font-bold">SMC</h1>
                     </div>
                     <div className="space-x-8 hidden md:flex">
-                        <Link to="/" className="text-gray-700 hover:text-black">Home</Link>
-                        <a href="#features" className="text-gray-700 hover:text-black">Features</a>
-                        <a href="#pricing" className="text-gray-700 hover:text-black">Pricing</a>
+                       
                     </div>
                 </div>
                 <div className="space-x-4">

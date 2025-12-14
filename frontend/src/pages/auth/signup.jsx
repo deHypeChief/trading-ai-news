@@ -136,8 +136,8 @@ export default function SignupPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <Zap className="h-8 w-8 text-blue-600" />
-            <span className="text-2xl font-bold">Smart Money Calendar</span>
+                <img src="/smlogo.png" alt="" className='h-10 w-10'/>
+
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
           <p className="text-gray-600">Join 1000+ active traders</p>
@@ -358,17 +358,9 @@ export default function SignupPage() {
 }
 
 function GoogleSignUpButton({ setGoogleError, setGoogleLoading, googleLoading }) {
-  const googleLogin = useGoogleAuth(true);
-
-  const handleGoogleClick = async () => {
-    setGoogleError('');
-    setGoogleLoading(true);
-    try {
-      await googleLogin();
-    } catch (error) {
-      setGoogleError(error.message || 'Google sign-up failed');
-      setGoogleLoading(false);
-    }
+  const handleGoogleClick = () => {
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    window.location.href = `${backendUrl}/api/auth/google/login`;
   };
 
   return (

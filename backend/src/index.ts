@@ -11,6 +11,7 @@ import { calendarRoutes } from './routes/calendar';
 import { alertRoutes } from './routes/alerts';
 import { userRoutes } from './routes/users';
 import { debugRoutes } from './routes/debug';
+import { paymentsRouter } from './routes/payments';
 import { websocketRoutes, setupEventMonitoring } from './services/websocket';
 import { startAlertScheduler, stopAlertScheduler } from './services/alertScheduler';
 import { startCalendarSyncScheduler, stopCalendarSyncScheduler } from './services/calendarSync';
@@ -80,6 +81,7 @@ app.get('/api/health', () => {
 
 // Auth routes
 app.use(websocketRoutes);
+app.use(paymentsRouter);
 app.group('/api', (app) => app.use(authRoutes).use(calendarRoutes).use(alertRoutes).use(userRoutes).use(debugRoutes));
 
 // 404 handler

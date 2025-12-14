@@ -1,15 +1,63 @@
 import { Elysia, t } from 'elysia';
 import { User } from '../models/User';
 import jwt from '@elysiajs/jwt';
+import bearer from '@elysiajs/bearer';
 
 export const userRoutes = new Elysia()
   .use(
     jwt({
       name: 'jwt',
-      secret: process.env.JWT_SECRET || 'your-secret-key-change-this',
+      secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
     })
   )
-  // Get user profile
+  .use(bearer())
+  // Get current user profile
+  .get('/users/profile', async ({ jwt, bearer, set }) => {
+    try {
+      console.log('Profile request - Bearer token:', bearer ? 'present' : 'none');
+      
+      if (!bearer) {
+        console.log('No bearer token found');
+        set.status = 401;
+        return { error: 'Unauthorized - No token' };
+      }
+      
+      console.log('Token received, attempting verification...');
+      const payload = await jwt.verify(bearer);
+      console.log('JWT payload:', payload);
+      
+      if (!payload || !payload.userId) {
+        console.log('JWT verification failed - no payload or userId');
+        set.status = 401;
+        return { error: 'Unauthorized - Invalid token' };
+      }
+
+      const user = await User.findById(payload.userId).select('-password');
+      
+      if (!user) {
+        console.log('User not found for userId:', payload.userId);
+        set.status = 404;
+        return { error: 'User not found' };
+      }
+
+      console.log('User found:', user._id);
+      return {
+        success: true,
+        data: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          timezone: user.timezone,
+          createdAt: user.createdAt,
+        },
+      };
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      set.status = 500;
+      return { error: 'Failed to fetch user profile' };
+    }
+  })
+  // Get user profile by ID
   .get('/users/:userId', async ({ params: { userId }, set }) => {
     try {
       const user = await User.findById(userId).select('-password');
@@ -74,6 +122,7 @@ export const userRoutes = new Elysia()
             'Europe/London',
             'Europe/Paris',
             'Europe/Berlin',
+            'Africa/Lagos',
             'Asia/Tokyo',
             'Asia/Shanghai',
             'Asia/Hong_Kong',
