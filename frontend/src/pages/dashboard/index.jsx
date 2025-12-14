@@ -81,6 +81,7 @@ export default function Dashboard() {
 
 				const startDate = new Date();
 				startDate.setHours(0, 0, 0, 0);
+				startDate.setDate(startDate.getDate() - 30); // Include past 30 days
 				const endDate = new Date(startDate);
 				endDate.setFullYear(endDate.getFullYear() + 1);
 
@@ -95,6 +96,9 @@ export default function Dashboard() {
 				const data = await res.json();
 
 				if (!data.success) throw new Error(data.message || 'Failed to load events');
+
+				console.log('Fetched', data.data.events.length, 'events for calendar');
+				console.log('Date range:', startDate.toISOString(), 'to', endDate.toISOString());
 
 				// Sort by relevance desc then impact then time
 				const sorted = [...data.data.events].sort((a, b) => {
@@ -197,6 +201,7 @@ export default function Dashboard() {
 	// Build daily buckets for mini-calendar heatmap
 	const dayBuckets = useMemo(() => {
 		const buckets = {};
+		console.log('Building dayBuckets from', todayEvents.length, 'events');
 		todayEvents.forEach((evt) => {
 			const d = new Date(evt.eventDateTime);
 			const key = formatDateKey(d);
@@ -205,6 +210,7 @@ export default function Dashboard() {
 			else if (evt.impact === 'Medium') buckets[key].medium += 1;
 			else buckets[key].low += 1;
 		});
+		console.log('Day buckets created:', Object.keys(buckets).length, 'days with events');
 		return buckets;
 	}, [todayEvents]);
 
