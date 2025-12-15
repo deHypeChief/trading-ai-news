@@ -22,7 +22,7 @@ function Navbar() {
                         <Button className="rounded-full" size="lg" variant="outline">Login</Button>
                     </Link>
                     <Link to="/signup">
-                        <Button className="rounded-full" size="lg">Create Account</Button>
+                        <Button className="rounded-full bg-[#FF0000]" size="lg">Create Account</Button>
                     </Link>
                 </div>
             </div>
@@ -135,7 +135,7 @@ function Pricing() {
                             <span className="text-5xl font-bold">$1</span>
                             <span className="text-gray-600">/month</span>
                         </div>
-                        <Button className="w-full rounded-full mb-6">Start Free Trial</Button>
+                        <Button className="w-full rounded-full mb-6 bg-[#FF0000]">Start Free Trial</Button>
                         <div className="space-y-3">
                             <div className="flex gap-3 items-center">
                                 <CheckCircle2 className="h-5 w-5 text-green-600" />
@@ -157,7 +157,7 @@ function Pricing() {
                     </div>
 
                     {/* Yearly */}
-                    <div className="bg-black text-white p-8 rounded-lg border-2 border-black relative">
+                    <div className="bg-[#FF0000] text-white p-8 rounded-lg  relative">
                         <div className="absolute -top-4 left-4 bg-green-500 px-3 py-1 rounded-full text-sm font-semibold">
                             Save 42%
                         </div>
@@ -169,19 +169,19 @@ function Pricing() {
                         <Button className="w-full rounded-full mb-6 bg-white text-black hover:bg-gray-100">Start Free Trial</Button>
                         <div className="space-y-3">
                             <div className="flex gap-3 items-center">
-                                <CheckCircle2 className="h-5 w-5 text-green-300" />
+                                <CheckCircle2 className="h-5 w-5 text-white" />
                                 <span>AI-powered calendar</span>
                             </div>
                             <div className="flex gap-3 items-center">
-                                <CheckCircle2 className="h-5 w-5 text-green-300" />
+                                <CheckCircle2 className="h-5 w-5 text-white" />
                                 <span>Smart alerts</span>
                             </div>
                             <div className="flex gap-3 items-center">
-                                <CheckCircle2 className="h-5 w-5 text-green-300" />
+                                <CheckCircle2 className="h-5 w-5 text-white" />
                                 <span>Position calculator</span>
                             </div>
                             <div className="flex gap-3 items-center">
-                                <CheckCircle2 className="h-5 w-5 text-green-300" />
+                                <CheckCircle2 className="h-5 w-5 text-white" />
                                 <span>Crypto payments</span>
                             </div>
                         </div>
@@ -212,7 +212,7 @@ export default function LandingPage() {
                         </p>
                         <div className="pt-6 space-x-6">
                             <Link to="/signup">
-                                <Button className="rounded-full py-6 text-lg  px-28" size="lg">
+                                <Button className="rounded-full py-6 text-lg  px-28 bg-[#FF0000]" size="lg">
                                     Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
                                 </Button>
                             </Link>

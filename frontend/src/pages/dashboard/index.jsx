@@ -739,7 +739,7 @@ export default function Dashboard() {
 														setSelectedCurrency(currStr);
 														setShowFilters(false);
 													}}
-													className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm rounded-lg font-medium hover:from-blue-700 hover:to-blue-800 transition-all shadow-sm hover:shadow-md"
+													className="px-4 py-2 bg-[#FF0000] text-white text-sm rounded-lg font-medium  transition-all shadow-sm hover:shadow-md"
 												>
 													Apply Filter
 												</button>
@@ -758,7 +758,7 @@ export default function Dashboard() {
 
 								{loading ? (
 									<div className="p-12 text-center">
-										<div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+										<div className="inline-block w-8 h-8 border-4 border-[#FF0000] border-t-transparent rounded-full animate-spin"></div>
 										<p className="text-gray-600 mt-4">Loading events...</p>
 									</div>
 								) : error ? (
