@@ -147,6 +147,56 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
+  const cancelSubscription = async ({ immediate = false } = {}) => {
+    if (!token) throw new Error('Not authenticated');
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/subscription/cancel`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ immediate })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Failed to cancel subscription');
+      }
+
+      // Update local user to reflect cancellation state
+      setUser((prev) => {
+        const updated = { ...prev };
+
+        if (data.immediate) {
+          updated.subscription = {
+            ...(updated?.subscription || {}),
+            status: 'inactive',
+            plan: 'free',
+            renewalDate: null,
+            paymentMethod: null,
+            cancelAtPeriodEnd: false,
+            cancellationDate: null,
+          };
+        } else if (data.scheduled) {
+          updated.subscription = {
+            ...(updated?.subscription || {}),
+            cancelAtPeriodEnd: true,
+            cancellationDate: data.cancellationDate,
+          };
+        }
+
+        localStorage.setItem('authUser', JSON.stringify(updated));
+        return updated;
+      });
+
+      return data;
+    } catch (err) {
+      console.error('Cancel subscription error:', err);
+      throw err;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -158,6 +208,7 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         updateUser,
+        cancelSubscription,
         setUser,
         setToken,
         isAuthenticated: !!token && !!user,

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
+import SubscriptionBadge from '@/components/ui/subscription-badge.jsx';
+import CancelSubscriptionDialog from '@/components/subscription/CancelSubscriptionDialog.jsx';
 import { Calendar, LogOut, Clock3, ChevronLeft, ChevronRight, AlertCircle, Filter, Menu, X, User, Settings } from 'lucide-react';
 
 const TIMEZONES = [
@@ -24,8 +26,11 @@ const TIMEZONES = [
 ];
 
 export default function Dashboard() {
-	const { user, logout, updateUser } = useAuth();
+	const { user, logout, updateUser, cancelSubscription } = useAuth();
 	const navigate = useNavigate();
+	const [subActionLoading, setSubActionLoading] = useState(false);
+	const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+	const [cancelMessage, setCancelMessage] = useState('');
 	const [now, setNow] = useState(new Date());
 	const [todayEvents, setTodayEvents] = useState([]);
 	const [selectedDate, setSelectedDate] = useState(null); // yyyy-mm-dd
@@ -479,6 +484,7 @@ export default function Dashboard() {
 								<Menu className="h-6 w-6" />
 							</button> */}
 							<div className="sm:flex items-center gap-3">
+								{user && <SubscriptionBadge user={user} />}
 								<div className="relative">
 									<button
 										onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -502,6 +508,17 @@ export default function Dashboard() {
 													<Settings className="h-4 w-4" />
 													Settings
 												</button>
+												{/* {user?.subscription?.status === 'active' && (
+													<button
+														onClick={async () => {
+															setUserMenuOpen(false);
+															setCancelDialogOpen(true);
+														}}
+														className="w-full px-4 py-2 text-left text-sm text-orange-600 hover:bg-gray-50 flex items-center gap-2"
+													>
+														Cancel Subscription
+													</button>
+												)} */}
 												<button
 													onClick={() => { setUserMenuOpen(false); handleLogout(); }}
 													className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-50 flex items-center gap-2"
@@ -1255,7 +1272,31 @@ export default function Dashboard() {
 						</div>
 					)
 				}
+				{cancelMessage && (<div className="mt-3 text-sm text-green-800 bg-green-50 border border-green-200 rounded-md px-3 py-2">{cancelMessage}</div>)}
+				<CancelSubscriptionDialog
+					open={cancelDialogOpen}
+					onOpenChange={setCancelDialogOpen}
+					user={user}
+					loading={subActionLoading}
+					onConfirm={async ({ immediate }) => {
+						try {
+							setSubActionLoading(true);
+							const res = await cancelSubscription({ immediate });
+							if (res.scheduled) {
+								setCancelMessage(`Cancellation scheduled for ${new Date(res.cancellationDate).toLocaleDateString()}`);
+							} else if (res.immediate) {
+								setCancelMessage('Subscription canceled');
+							}
+							setCancelDialogOpen(false);
+							setTimeout(() => setCancelMessage(''), 8000);
+						} catch (err) {
+							alert(err.message || 'Failed to cancel subscription');
+						} finally {
+							setSubActionLoading(false);
+						}
+					}}
+				/>
 			</div>
-		</div >
+		</div>
 	);
 }

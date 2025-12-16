@@ -21,9 +21,10 @@ interface IUser {
   };
   subscription: {
     plan: 'free' | 'monthly' | 'yearly';
-    status: 'active' | 'inactive' | 'cancelled';
+    status: 'active' | 'inactive' | 'cancelled' | 'trial';
     renewalDate?: Date;
     paymentMethod?: 'paystack' | 'cryptomus';
+    trialEndsAt?: Date;
   };
   createdAt?: Date;
   updatedAt?: Date;
@@ -75,9 +76,12 @@ const userSchema = new mongoose.Schema<IUser>(
     },
     subscription: {
       plan: { type: String, enum: ['free', 'monthly', 'yearly'], default: 'free' },
-      status: { type: String, enum: ['active', 'inactive', 'cancelled'], default: 'inactive' },
+      status: { type: String, enum: ['active', 'inactive', 'cancelled', 'trial'], default: 'trial' },
       renewalDate: Date,
       paymentMethod: { type: String, enum: ['paystack', 'cryptomus'] },
+      trialEndsAt: { type: Date },
+      cancelAtPeriodEnd: { type: Boolean, default: false },
+      cancellationDate: Date,
     },
   },
   {

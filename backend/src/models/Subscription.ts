@@ -32,6 +32,14 @@ const subscriptionSchema = new mongoose.Schema<ISubscription>(
       enum: ['active', 'inactive', 'cancelled'],
       default: 'active',
     },
+    // If true, the subscription will be cancelled at the next renewalDate
+    cancelAtPeriodEnd: {
+      type: Boolean,
+      default: false,
+    },
+    cancellationDate: {
+      type: Date,
+    },
     startDate: {
       type: Date,
       default: Date.now,

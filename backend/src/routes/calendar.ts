@@ -5,8 +5,10 @@ import { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isG
 import { broadcastEventUpdate } from '../services/websocket';
 import { ApiError } from '../utils/errors';
 import { fetchNewsForEvent } from '../services/news';
+import { subscriptionMiddleware } from '../middleware/subscription';
 
 export const calendarRoutes = new Elysia({ prefix: '/calendar' })
+  .use(subscriptionMiddleware)
   // Get calendar events with filtering
   .get(
     '/',

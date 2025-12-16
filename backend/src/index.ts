@@ -1,128 +1,110 @@
-import { Elysia } from 'elysia';
-import cors from '@elysiajs/cors';
-import jwt from '@elysiajs/jwt';
-import bearer from '@elysiajs/bearer';
-import 'dotenv/config';
+import { Elysia } from 'elysia'
+import cors from '@elysiajs/cors'
+import jwt from '@elysiajs/jwt'
+import bearer from '@elysiajs/bearer'
+import 'dotenv/config'
 
-import { connectDB, disconnectDB } from './config/database';
-import { initRedis, closeRedis } from './config/redis';
-import { authRoutes } from './routes/auth';
-import { calendarRoutes } from './routes/calendar';
-import { alertRoutes } from './routes/alerts';
-import { userRoutes } from './routes/users';
-import { debugRoutes } from './routes/debug';
-import { paymentsRouter } from './routes/payments';
-import { websocketRoutes, setupEventMonitoring } from './services/websocket';
-import { startAlertScheduler, stopAlertScheduler } from './services/alertScheduler';
-import { startCalendarSyncScheduler, stopCalendarSyncScheduler } from './services/calendarSync';
+import { connectDB, disconnectDB } from './config/database'
+import { initRedis, closeRedis } from './config/redis'
 
-const app = new Elysia();
+import { authRoutes } from './routes/auth'
+import { calendarRoutes } from './routes/calendar'
+import { alertRoutes } from './routes/alerts'
+import { userRoutes } from './routes/users'
+import { debugRoutes } from './routes/debug'
+import { paymentsRouter } from './routes/payments'
+import { websocketRoutes, setupEventMonitoring } from './services/websocket'
 
-// Initialize databases
-let isInitialized = false;
+import { startAlertScheduler, stopAlertScheduler } from './services/alertScheduler'
+import { startCalendarSyncScheduler, stopCalendarSyncScheduler } from './services/calendarSync'
 
-const initializeApp = async () => {
-  if (isInitialized) return;
+const app = new Elysia()
 
-  try {
-    // Connect to MongoDB
-    await connectDB();
+/* -------------------- lifecycle -------------------- */
 
-    // Initialize Redis
-    await initRedis();
+app.onStart(async () => {
+  await connectDB()
+  await initRedis()
 
-    // Setup WebSocket event monitoring
-    setupEventMonitoring();
+  setupEventMonitoring()
+  startAlertScheduler()
+  startCalendarSyncScheduler()
 
-    // Start alert scheduler
-    startAlertScheduler();
+  console.log('✅ All services initialized')
+})
 
-    // Start calendar sync scheduler
-    startCalendarSyncScheduler();
+/* -------------------- middleware -------------------- */
 
-    isInitialized = true;
-    console.log('✅ All services initialized');
-  } catch (error) {
-    console.error('❌ Initialization failed:', error);
-    process.exit(1);
-  }
-};
-
-// Middleware
 app
   .use(
     cors({
-      origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-      credentials: true,
+      origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+      credentials: true
     })
   )
   .use(
     jwt({
       name: 'jwt',
-      secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+      secret: process.env.JWT_SECRET!
     })
   )
   .use(bearer())
-  .onStart(initializeApp);
 
-// Root/Health check
-app.get('/', () => {
-  return { 
-    status: 'ok', 
+/* -------------------- core routes -------------------- */
+
+app
+  .get('/', () => ({
+    status: 'ok',
     message: 'Smart Money Calendar API',
     version: '1.0.0',
-    timestamp: new Date().toISOString() 
-  };
-});
+    timestamp: new Date().toISOString()
+  }))
+  .get('/api/health', () => ({
+    status: 'ok',
+    timestamp: new Date().toISOString()
+  }))
 
-app.get('/api/health', () => {
-  return { status: 'ok', timestamp: new Date().toISOString() };
-});
+/* -------------------- plugins -------------------- */
 
-// Auth routes
-app.use(websocketRoutes);
-app.use(paymentsRouter);
-app.group('/api', (app) => app.use(authRoutes).use(calendarRoutes).use(alertRoutes).use(userRoutes).use(debugRoutes));
+app
+  .use(websocketRoutes)
+  .use(paymentsRouter)
+  .group('/api', app =>
+    app
+      .use(authRoutes)
+      .use(calendarRoutes)
+      .use(alertRoutes)
+      .use(userRoutes)
+      .use(debugRoutes)
+  )
 
-// 404 handler
+/* -------------------- errors -------------------- */
+
 app.onError(({ code, error, set }) => {
   if (code === 'NOT_FOUND') {
-    set.status = 404;
-    return { error: 'Route not found', statusCode: 404 };
+    set.status = 404
+    return { error: 'Route not found' }
   }
 
-  console.error('Error:', error);
-  set.status = 500;
-  return {
-    statusCode: 500,
-    message: 'Internal Server Error',
-    error: error.message,
-  };
-});
+  console.error(error)
+  set.status = 500
+  return { error: 'Internal Server Error' }
+})
 
-// Graceful shutdown
-const gracefulShutdown = async () => {
-  console.log('🛑 Shutting down gracefully...');
-  try {
-    stopAlertScheduler();
-    stopCalendarSyncScheduler();
-    await disconnectDB();
-    await closeRedis();
-    process.exit(0);
-  } catch (error) {
-    console.error('Shutdown error:', error);
-    process.exit(1);
-  }
-};
+/* -------------------- shutdown -------------------- */
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+const shutdown = async () => {
+  stopAlertScheduler()
+  stopCalendarSyncScheduler()
+  await disconnectDB()
+  await closeRedis()
+  process.exit(0)
+}
 
-// Start server
-const PORT = parseInt(process.env.PORT || '3001');
-app.listen(PORT);
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
 
-console.log(
-  `🦊 Elysia is running at http://localhost:${PORT}`
-);
+/* -------------------- listen -------------------- */
 
+app.listen(3001)
+console.log('🦊 Elysia running at http://localhost:3001')

@@ -1,16 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { User } from '../models/User';
-import jwt from '@elysiajs/jwt';
-import bearer from '@elysiajs/bearer';
 
 export const userRoutes = new Elysia()
-  .use(
-    jwt({
-      name: 'jwt',
-      secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-    })
-  )
-  .use(bearer())
   // Get current user profile
   .get('/users/profile', async ({ jwt, bearer, set }) => {
     try {

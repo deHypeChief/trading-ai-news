@@ -2,8 +2,10 @@ import { Elysia, t } from 'elysia';
 import { Alert } from '../models/Alert';
 import { User } from '../models/User';
 import { getAlertStats, triggerAlertCheck } from '../services/alertScheduler';
+import { subscriptionMiddleware } from '../middleware/subscription';
 
 export const alertRoutes = new Elysia({ prefix: '/alerts' })
+  .use(subscriptionMiddleware)
   // Get user's alert configuration
   .get('/', async ({ headers }) => {
     try {

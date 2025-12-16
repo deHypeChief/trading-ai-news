@@ -40,12 +40,18 @@ export const authRoutes = new Elysia({ prefix: '/auth' })
           throw new ApiError(409, 'Email or username already exists');
         }
 
-        // Create user
+        // Create user with 3-day free trial
+        const trialEndsAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // 3 days
         const user = await User.create({
           email,
           password,
           username,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          subscription: {
+            plan: 'free',
+            status: 'trial',
+            trialEndsAt,
+          },
         });
 
         return {

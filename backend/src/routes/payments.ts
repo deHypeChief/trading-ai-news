@@ -241,4 +241,66 @@ export const paymentsRouter = new Elysia({ prefix: '/api' })
         };
       }
     }
-  );
+  )
+
+  // Cancel subscription (user-initiated)
+  .post('/subscription/cancel', async ({ body, jwt, bearer, set }) => {
+    try {
+      if (!bearer) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized' };
+      }
+
+      const payload = await jwt.verify(bearer);
+      if (!payload || !payload.userId) {
+        set.status = 401;
+        return { success: false, error: 'Unauthorized - Invalid token' };
+      }
+
+      const userId = payload.userId;
+      const immediate = body?.immediate === true;
+
+      // Fetch user's subscription record
+      const subscription = await Subscription.findOne({ userId });
+
+      // If no subscription or no renewalDate, cancel immediately
+      if (!subscription || !subscription.renewalDate || immediate) {
+        await Subscription.findOneAndUpdate(
+          { userId },
+          { $set: { status: 'inactive', renewalDate: null, cancelAtPeriodEnd: false, cancellationDate: null } },
+          { upsert: false }
+        );
+
+        await User.findByIdAndUpdate(userId, {
+          'subscription.status': 'inactive',
+          'subscription.plan': 'free',
+          'subscription.renewalDate': null,
+          'subscription.paymentMethod': null,
+          'subscription.cancelAtPeriodEnd': false,
+          'subscription.cancellationDate': null,
+        });
+
+        return { success: true, message: 'Subscription canceled immediately', immediate: true };
+      }
+
+      // Schedule cancellation at renewal date
+      const cancellationDate = subscription.renewalDate;
+
+      await Subscription.findOneAndUpdate(
+        { userId },
+        { $set: { cancelAtPeriodEnd: true, cancellationDate } },
+        { upsert: false }
+      );
+
+      await User.findByIdAndUpdate(userId, {
+        'subscription.cancelAtPeriodEnd': true,
+        'subscription.cancellationDate': cancellationDate,
+      });
+
+      return { success: true, message: 'Subscription cancellation scheduled', scheduled: true, cancellationDate };
+    } catch (error: any) {
+      console.error('Cancel subscription error:', error);
+      set.status = 500;
+      return { success: false, error: error.message || 'Failed to cancel subscription' };
+    }
+  });
