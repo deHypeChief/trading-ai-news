@@ -61,10 +61,13 @@ export default function Dashboard() {
 	// Filters
 	const [selectedCurrency, setSelectedCurrency] = useState('');
 	const [selectedImpact, setSelectedImpact] = useState('');
+	const [selectedCountry, setSelectedCountry] = useState('');
 	const [selectedImpactLevels, setSelectedImpactLevels] = useState({ High: true, Medium: true, Low: false });
 	const [minRelevance] = useState('');
 	const [currencies, setCurrencies] = useState([]);
+	const [countries, setCountries] = useState([]);
 	const [selectedCurrencies, setSelectedCurrencies] = useState({});
+	const [selectedCountries, setSelectedCountries] = useState({});
 
 	const [selectedEvent, setSelectedEvent] = useState(null);
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -275,8 +278,9 @@ export default function Dashboard() {
 
 	useEffect(() => {
 		fetchCurrencies();
+		fetchCountries();
 		fetchEvents();
-	}, [selectedCurrency, selectedImpact, minRelevance]);
+	}, [selectedCurrency, selectedImpact, selectedCountry, minRelevance]);
 
 	const fetchCurrencies = async () => {
 		try {
@@ -287,6 +291,21 @@ export default function Dashboard() {
 			}
 		} catch (err) {
 			console.error('Failed to fetch currencies:', err);
+		}
+	};
+
+	const fetchCountries = async () => {
+		try {
+			const response = await fetch(`${API_URL}/api/calendar/meta/countries`);
+			const data = await response.json();
+			if (data.success) {
+				console.debug('Fetched countries:', data.data);
+				setCountries(data.data);
+			} else {
+				console.warn('No countries returned or error:', data);
+			}
+		} catch (err) {
+			console.error('Failed to fetch countries:', err);
 		}
 	};
 
@@ -314,6 +333,7 @@ export default function Dashboard() {
 
 			if (selectedCurrency) params.append('currency', selectedCurrency);
 			if (selectedImpact) params.append('impact', selectedImpact);
+			if (selectedCountry) params.append('country', selectedCountry);
 			if (minRelevance) params.append('minRelevance', minRelevance);
 
 			const response = await fetch(`${API_URL}/api/calendar?${params}`);
@@ -704,40 +724,40 @@ export default function Dashboard() {
 													</div>
 												</div>
 
-												{/* Currencies */}
+
+												{/* Countries */}
 												<div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
 													<div className="flex items-center justify-between mb-3">
-														<h3 className="font-semibold text-gray-900 text-sm">Currencies</h3>
+														<h3 className="font-semibold text-gray-900 text-sm">Currency</h3>
 														<div className="flex gap-3">
 															<button
-																onClick={() => setSelectedCurrencies(['AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP', 'JPY', 'NZD', 'USD'].reduce((acc, c) => ({ ...acc, [c]: true }), {}))}
-																className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+																onClick={() => setSelectedCountries(countries.reduce((acc, c) => ({ ...acc, [c]: true }), {}))}
+															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
 															>
 																all
 															</button>
 															<span className="text-gray-300">|</span>
 															<button
-																onClick={() => setSelectedCurrencies({})}
-																className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+																onClick={() => setSelectedCountries({})}
+															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
 															>
 																none
 															</button>
 														</div>
 													</div>
-													<div className="flex items-center gap-3">
-														{['AUD', 'CAD', 'CHF', 'CNY', 'EUR', 'GBP', 'JPY', 'NZD', 'USD'].map((curr) => (
-															<label key={curr} className="flex items-center gap-2 cursor-pointer group">
-																<input
-																	type="checkbox"
-																	checked={selectedCurrencies[curr] || false}
-																	onChange={(e) => setSelectedCurrencies({ ...selectedCurrencies, [curr]: e.target.checked })}
-																	className="w-4 h-4 accent-blue-600"
-																/>
-																<span className="text-xs font-medium text-gray-700 group-hover:text-gray-900">{curr}</span>
-															</label>
-														))}
+													<div className="flex flex-wrap items-center gap-3">
+														{countries.length === 0 ? (
+															<div className="text-xs text-gray-500">Loading countries…</div>
+														) : (
+															countries.map((country) => (
+																<label key={country} className="flex items-center gap-2 cursor-pointer group">
+																	<input type="checkbox" checked={!!selectedCountries[country]} onChange={(e) => setSelectedCountries({ ...selectedCountries, [country]: e.target.checked })} className="w-4 h-4 accent-blue-600" />
+																	<span className="text-xs font-medium text-gray-700 group-hover:text-gray-900">{country}</span>
+																</label>
+															))
+														)}
 													</div>
-												</div>
+													</div>
 											</div>
 
 											{/* Action Buttons */}
@@ -754,6 +774,11 @@ export default function Dashboard() {
 															.map(([k]) => k)
 															.join(',');
 														setSelectedCurrency(currStr);
+														const countryStr = Object.entries(selectedCountries)
+															.filter(([, v]) => v)
+															.map(([k]) => k)
+															.join(',');
+														setSelectedCountry(countryStr);
 														setShowFilters(false);
 													}}
 													className="px-4 py-2 bg-[#FF0000] text-white text-sm rounded-lg font-medium  transition-all shadow-sm hover:shadow-md"
@@ -822,11 +847,11 @@ export default function Dashboard() {
 																		<td className="px-2 sm:px-4 py-3 max-w-xs">
 																			<div className="flex items-center gap-2 mb-1">
 																				<span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
-																					{event.currency}
+																					{event.country}
 																				</span>
 																				<span className="font-semibold text-gray-900 text-sm sm:text-base">{event.eventName}</span>
 																			</div>
-																			<div className="text-xs text-gray-500">{event.country}</div>
+																			{/* <div className="text-xs text-gray-500">{event.currency}</div> */}
 																		</td>
 																		<td className="px-2 sm:px-4 py-3 hidden sm:table-cell">
 																			<span className={`px-2 py-1 rounded text-xs font-medium border ${getImpactColor(event.impact)}`}>

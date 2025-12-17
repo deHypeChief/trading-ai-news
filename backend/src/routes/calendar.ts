@@ -19,6 +19,7 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
           endDate,
           currency,
           impact,
+          country,
           minRelevance,
           limit = 100,
           offset = 0,
@@ -27,6 +28,7 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
           endDate?: string;
           currency?: string;
           impact?: string;
+          country?: string;
           minRelevance?: string;
           limit?: number;
           offset?: number;
@@ -50,6 +52,12 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
             i.charAt(0).toUpperCase() + i.slice(1).toLowerCase()
           );
           filter.impact = { $in: impacts };
+        }
+
+        // Support country filtering (comma-separated)
+        if (country) {
+          const countries = country.split(',').map(c => c.trim());
+          filter.country = { $in: countries };
         }
 
         if (minRelevance) {
@@ -380,6 +388,27 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
         statusCode: 500,
         success: false,
         message: 'Failed to fetch currencies',
+        data: error.message,
+      };
+    }
+  })
+
+  // Get available countries
+  .get('/meta/countries', async () => {
+    try {
+      const countries = await Event.distinct('country');
+
+      return {
+        statusCode: 200,
+        success: true,
+        message: 'Available countries retrieved',
+        data: countries.sort(),
+      };
+    } catch (error: any) {
+      return {
+        statusCode: 500,
+        success: false,
+        message: 'Failed to fetch countries',
         data: error.message,
       };
     }
