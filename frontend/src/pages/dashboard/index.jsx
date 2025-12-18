@@ -26,7 +26,7 @@ const TIMEZONES = [
 ];
 
 export default function Dashboard() {
-	const { user, logout, updateUser, cancelSubscription } = useAuth();
+	const { user, token, logout, updateUser, cancelSubscription } = useAuth();
 	const navigate = useNavigate();
 	const [subActionLoading, setSubActionLoading] = useState(false);
 	const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -81,60 +81,55 @@ export default function Dashboard() {
 		return () => clearInterval(timer);
 	}, []);
 
-	const fetchCalendarEvents = async () => {
-		try {
-			setLoadingEvents(true);
-			setEventsError('');
-
-			const startDate = new Date();
-			startDate.setHours(0, 0, 0, 0);
-			startDate.setDate(startDate.getDate() - 30); // Include past 30 days
-			const endDate = new Date(startDate);
-			endDate.setFullYear(endDate.getFullYear() + 1);
-
-			const params = new URLSearchParams({
-				startDate: startDate.toISOString(),
-				endDate: endDate.toISOString(),
-				limit: '1000',
-				offset: '0',
-			});
-
-			if (selectedCurrency) params.append('currency', selectedCurrency);
-			if (selectedImpact) params.append('impact', selectedImpact);
-			if (selectedCountry) params.append('country', selectedCountry);
-			if (minRelevance) params.append('minRelevance', minRelevance);
-
-			const res = await fetch(`${API_URL}/api/calendar?${params}`);
-			const data = await res.json();
-
-			if (!data.success) throw new Error(data.message || 'Failed to load events');
-
-			console.log('Fetched', data.data.events.length, 'events for calendar');
-			console.log('Date range:', startDate.toISOString(), 'to', endDate.toISOString());
-
-			// Sort by relevance desc then impact then time
-			const sorted = [...data.data.events].sort((a, b) => {
-				const relA = a.aiRelevanceScore ?? 0;
-				const relB = b.aiRelevanceScore ?? 0;
-				if (relB !== relA) return relB - relA;
-				const impactRank = { High: 3, Medium: 2, Low: 1 };
-				const impA = impactRank[a.impact] || 0;
-				const impB = impactRank[b.impact] || 0;
-				if (impB !== impA) return impB - impA;
-				return new Date(a.eventDateTime) - new Date(b.eventDateTime);
-			});
-
-			setTodayEvents(sorted);
-			setPage(1);
-		} catch (err) {
-			setEventsError(err.message || 'Failed to load events');
-		} finally {
-			setLoadingEvents(false);
-		}
-	};
-
 	useEffect(() => {
-		fetchCalendarEvents();
+		const fetchEvents = async () => {
+			try {
+				setLoadingEvents(true);
+				setEventsError('');
+
+				const startDate = new Date();
+				startDate.setHours(0, 0, 0, 0);
+				startDate.setDate(startDate.getDate() - 30); // Include past 30 days
+				const endDate = new Date(startDate);
+				endDate.setFullYear(endDate.getFullYear() + 1);
+
+				const params = new URLSearchParams({
+					startDate: startDate.toISOString(),
+					endDate: endDate.toISOString(),
+					limit: '1000',
+					offset: '0',
+				});
+
+				const res = await fetch(`${API_URL}/api/calendar?${params}`);
+				const data = await res.json();
+
+				if (!data.success) throw new Error(data.message || 'Failed to load events');
+
+				console.log('Fetched', data.data.events.length, 'events for calendar');
+				console.log('Date range:', startDate.toISOString(), 'to', endDate.toISOString());
+
+				// Sort by relevance desc then impact then time
+				const sorted = [...data.data.events].sort((a, b) => {
+					const relA = a.aiRelevanceScore ?? 0;
+					const relB = b.aiRelevanceScore ?? 0;
+					if (relB !== relA) return relB - relA;
+					const impactRank = { High: 3, Medium: 2, Low: 1 };
+					const impA = impactRank[a.impact] || 0;
+					const impB = impactRank[b.impact] || 0;
+					if (impB !== impA) return impB - impA;
+					return new Date(a.eventDateTime) - new Date(b.eventDateTime);
+				});
+
+				setTodayEvents(sorted);
+				setPage(1);
+			} catch (err) {
+				setEventsError(err.message || 'Failed to load events');
+			} finally {
+				setLoadingEvents(false);
+			}
+		};
+
+		fetchEvents();
 	}, [API_URL]);
 
 	useEffect(() => {
@@ -290,6 +285,14 @@ export default function Dashboard() {
 	}, [hotStories.length]);
 
 	const [monthOffset, setMonthOffset] = useState(0);
+	// Trial ended modal state
+	const [showTrialEndedModal, setShowTrialEndedModal] = useState(false);
+	const [upgradeLoading, setUpgradeLoading] = useState(null);
+	// Upgrade banner for free/expired plans
+	const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
+	const [bannerDismissed, setBannerDismissed] = useState(() => {
+		try { return localStorage.getItem('upgradeBannerDismissed') === '1'; } catch (e) { return false; }
+	});
 	const currentMonth = useMemo(() => {
 		const d = new Date();
 		d.setMonth(d.getMonth() + monthOffset);
@@ -324,11 +327,87 @@ export default function Dashboard() {
 		}, 50);
 	};
 
+	// Open the trial-ended modal when relevant
+	useEffect(() => {
+		try {
+			const sub = user?.subscription;
+			console.log('Dashboard subscription check', { sub, bannerDismissed });
+			if (!sub) return;
+			const trialEnds = sub?.trialEndsAt ? new Date(sub.trialEndsAt) : null;
+			const trialExpired = trialEnds && new Date() >= trialEnds && sub.plan === 'free';
+			if (trialExpired) {
+				console.log('Trial expired detected, showing modal');
+				setShowTrialEndedModal(true);
+			}
+
+			// Show upgrade banner if user is on free plan or has non-active paid plan
+			const hasFreePlan = sub.plan === 'free';
+			const hasExpiredPaid = sub.plan && sub.plan !== 'free' && sub.status !== 'active';
+			console.log('hasFreePlan, hasExpiredPaid:', hasFreePlan, hasExpiredPaid);
+			if (!bannerDismissed && (hasFreePlan || hasExpiredPaid)) {
+				console.log('Showing upgrade banner');
+				setShowUpgradeBanner(true);
+			}
+		} catch (e) {
+			console.error('Error checking trial status', e);
+		}
+	}, [user, bannerDismissed]);
+
+	const dismissUpgradeBanner = () => {
+		setShowUpgradeBanner(false);
+		setBannerDismissed(true);
+		try { localStorage.setItem('upgradeBannerDismissed', '1'); } catch (e) { }
+	};
+
+	const handleUpgrade = async (planId) => {
+		if (!user) return alert('Not signed in');
+		setUpgradeLoading(planId);
+		try {
+			const cb = `${API_URL}/subscription/callback`;
+			const resp = await fetch(`${API_URL}/api/paystack/init`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${token || localStorage.getItem('authToken')}`,
+				},
+				body: JSON.stringify({
+					userId: user.id || user._id,
+					planId,
+					email: user.email,
+					callbackUrl: cb,
+				}),
+			});
+			const data = await resp.json();
+			if (data.success) {
+				window.location.href = data.data.authorization_url;
+			} else {
+				alert(data.error || 'Failed to initiate payment');
+			}
+		} catch (err) {
+			console.error('Upgrade error', err);
+			alert('Failed to initiate upgrade. Please try again.');
+		} finally {
+			setUpgradeLoading(null);
+		}
+	};
+
+	// Prevent Escape key from closing modal while trial-ended modal is shown
+	useEffect(() => {
+		if (!showTrialEndedModal) return;
+		const handler = (e) => {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				e.stopPropagation();
+			}
+		};
+		window.addEventListener('keydown', handler, true);
+		return () => window.removeEventListener('keydown', handler, true);
+	}, [showTrialEndedModal]);
+
 	useEffect(() => {
 		fetchCurrencies();
 		fetchCountries();
 		fetchEvents();
-		fetchCalendarEvents();
 	}, [selectedCurrency, selectedImpact, selectedCountry, minRelevance]);
 
 	const fetchCurrencies = async () => {
@@ -599,6 +678,46 @@ export default function Dashboard() {
 			</nav>
 
 			<div className="px-4 sm:px-6 lg:px-20">
+				{/* Upgrade banner for free or expired plans */}
+				{showUpgradeBanner && (
+					<div className="mb-4 rounded-md bg-yellow-50 border border-yellow-100 p-4 flex items-center justify-between gap-4">
+						<div className="flex items-start gap-3">
+							<div className="text-yellow-600 font-semibold">Upgrade to Pro</div>
+							<div className="text-sm text-yellow-800">You are on the Free plan or your plan has expired. Upgrade to continue using premium features.</div>
+						</div>
+						<div className="flex items-center gap-3">
+							<button onClick={() => handleUpgrade('monthly')} className="bg-black text-white px-4 py-2 rounded">Upgrade Monthly</button>
+							<button onClick={() => handleUpgrade('yearly')} className="border border-gray-200 px-4 py-2 rounded">Upgrade Yearly</button>
+							<button onClick={dismissUpgradeBanner} className="text-xs text-gray-500 underline">Dismiss</button>
+						</div>
+					</div>
+				)}
+
+{/* Trial ended modal (non-dismissible) */}
+		{showTrialEndedModal && (
+			<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[20] backdrop-blur-sm" role="dialog" aria-modal="true">
+				<div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 mx-4" onClick={(e) => e.stopPropagation()}>
+					<div className="flex items-start justify-between mb-4">
+						<div>
+							<h3 className="text-lg font-bold">Your access has ended</h3>
+							<p className="text-sm text-gray-600 mt-1">Your free trial or subscription has ended. Upgrade to continue using premium features.</p>
+						</div>
+					</div>
+					<div className="space-y-4">
+						<div className="flex gap-3">
+							<button className="flex-1 bg-black text-white py-2 rounded" onClick={() => handleUpgrade('monthly')} disabled={upgradeLoading === 'monthly'}>
+								{upgradeLoading === 'monthly' ? 'Processing…' : 'Upgrade to Monthly'}
+							</button>
+							<button className="flex-1 border border-gray-200 py-2 rounded" onClick={() => handleUpgrade('yearly')} disabled={upgradeLoading === 'yearly'}>
+								{upgradeLoading === 'yearly' ? 'Processing…' : 'Upgrade to Yearly'}
+							</button>
+						</div>
+						<div className="text-xs text-gray-500">If you think this is an error, please contact support.</div>
+							</div>
+						</div>
+					</div>
+				)}
+
 				{/* TradingView Ticker Tape */}
 				<div className="bg-white border-b fixed top-16 left-0 right-0 z-40">
 					<div className="flex flex-col sm:flex-row">
@@ -653,7 +772,7 @@ export default function Dashboard() {
 				</div>
 
 				{/* Main Content */}
-				<div className="py-8 mt-10 md:mt-0" style={{ paddingTop: '140px' }}>
+				<div className="py-8 mt-10 md:mt">
 					{/* Primary layout matching sketch */}
 					<div className='relative grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6 '>
 
@@ -1111,255 +1230,240 @@ export default function Dashboard() {
 												{selectedEvent.volatilityPrediction} Volatility
 											</span>
 										)}
-									</div>
 
-									<div className="grid grid-cols-2 gap-4 text-sm">
-										<div>
-											<span className="text-gray-500">Currency:</span>
-											<span className="ml-2 font-medium">{selectedEvent.currency}</span>
-										</div>
-										<div>
-											<span className="text-gray-500">Country:</span>
-											<span className="ml-2 font-medium">{selectedEvent.country}</span>
-										</div>
-										<div>
-											<span className="text-gray-500">Date:</span>
-											<span className="ml-2 font-medium">{formatDate(selectedEvent.eventDateTime)}</span>
-										</div>
-										<div>
-											<span className="text-gray-500">Time:</span>
-											<span className="ml-2 font-medium">{formatTime(selectedEvent.eventDateTime)}</span>
-										</div>
-									</div>
-
-									{selectedEvent.aiRelevanceScore && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">AI Analysis</h3>
-											<div className="bg-blue-50 p-4 rounded-lg">
-												<div className="flex items-center gap-2 mb-3">
-													<span className="text-sm text-gray-700">Relevance Score:</span>
-													<span className={`text-lg font-bold ${getRelevanceColor(selectedEvent.aiRelevanceScore)}`}>
-														{selectedEvent.aiRelevanceScore}/100
-													</span>
+										{selectedEvent.aiRelevanceScore && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">AI Analysis</h3>
+												<div className="bg-blue-50 p-4 rounded-lg">
+													<div className="flex items-center gap-2 mb-3">
+														<span className="text-sm text-gray-700">Relevance Score:</span>
+														<span className={`text-lg font-bold ${getRelevanceColor(selectedEvent.aiRelevanceScore)}`}>
+															{selectedEvent.aiRelevanceScore}/100
+														</span>
+													</div>
+													{selectedEvent.aiReasoning && (
+														<p className="text-sm text-gray-700 mb-3">{selectedEvent.aiReasoning}</p>
+													)}
+													{selectedEvent.tradingRecommendation && (
+														<div className="bg-white p-3 rounded border border-blue-200">
+															<p className="text-sm font-medium text-blue-900">💡 Trading Recommendation:</p>
+															<p className="text-sm text-gray-700 mt-1">{selectedEvent.tradingRecommendation}</p>
+														</div>
+													)}
 												</div>
-												{selectedEvent.aiReasoning && (
-													<p className="text-sm text-gray-700 mb-3">{selectedEvent.aiReasoning}</p>
-												)}
-												{selectedEvent.tradingRecommendation && (
-													<div className="bg-white p-3 rounded border border-blue-200">
-														<p className="text-sm font-medium text-blue-900">💡 Trading Recommendation:</p>
-														<p className="text-sm text-gray-700 mt-1">{selectedEvent.tradingRecommendation}</p>
+											</div>
+										)}
+
+
+										{selectedEvent.aiSummary && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">AI Summary</h3>
+												<p className="text-sm text-gray-800 leading-relaxed">{selectedEvent.aiSummary}</p>
+												{/* <p className="text-sm text-gray-700 mt-2 italic">{historicalHint(selectedEvent)}</p> */}
+												{(selectedEvent.newsHeadline || selectedEvent.newsSource) && (
+													<div className="mt-3 text-sm text-gray-800">
+														{selectedEvent.newsHeadline && <p className="font-medium text-gray-900">{selectedEvent.newsHeadline}</p>}
+														{selectedEvent.newsSource && (
+															<p className="text-xs text-gray-600">Source: {selectedEvent.newsSource}{selectedEvent.newsPublishedAt ? ` • ${formatDateTime(selectedEvent.newsPublishedAt)}` : ''}</p>
+														)}
 													</div>
 												)}
 											</div>
-										</div>
-									)}
+										)}
 
-									{selectedEvent.aiSummary && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">AI Summary</h3>
-											<p className="text-sm text-gray-800 leading-relaxed">{selectedEvent.aiSummary}</p>
-											{/* <p className="text-sm text-gray-700 mt-2 italic">{historicalHint(selectedEvent)}</p> */}
-											{(selectedEvent.newsHeadline || selectedEvent.newsSource) && (
-												<div className="mt-3 text-sm text-gray-800">
-													{selectedEvent.newsHeadline && <p className="font-medium text-gray-900">{selectedEvent.newsHeadline}</p>}
-													{selectedEvent.newsSource && (
-														<p className="text-xs text-gray-600">Source: {selectedEvent.newsSource}{selectedEvent.newsPublishedAt ? ` • ${formatDateTime(selectedEvent.newsPublishedAt)}` : ''}</p>
-													)}
-												</div>
-											)}
-										</div>
-									)}
+										{selectedEvent.aiInDepthAnalysis && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">In-depth Analysis (AI)</h3>
+												<p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line">{selectedEvent.aiInDepthAnalysis}</p>
+											</div>
+										)}
 
-									{selectedEvent.aiInDepthAnalysis && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">In-depth Analysis (AI)</h3>
-											<p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line">{selectedEvent.aiInDepthAnalysis}</p>
-										</div>
-									)}
+										{selectedEvent.description && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">Description</h3>
+												<p className="text-sm text-gray-700">{selectedEvent.description}</p>
+											</div>
+										)}
+									</div>
 
-									{selectedEvent.description && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">Description</h3>
-											<p className="text-sm text-gray-700">{selectedEvent.description}</p>
-										</div>
-									)}
-								</div>
-
-								<div className="mt-6 flex justify-end">
-									<Button onClick={() => setSelectedEvent(null)}>Close</Button>
+									<div className="mt-6 flex justify-end">
+										<Button onClick={() => setSelectedEvent(null)}>Close</Button>
+									</div>
 								</div>
 							</div>
 						</div>
 					)}
-				</div>
 
-				{
-					modalEvent && (
-						<div
-							className="fixed inset-0 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4 z-50"
-							onClick={() => setModalEvent(null)}
-						>
+
+					{
+						modalEvent && (
 							<div
-								className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto shadow-xl no-scrollbar"
-								onClick={(e) => e.stopPropagation()}
+								className="fixed inset-0 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4 z-50"
+								onClick={() => setModalEvent(null)}
 							>
-								<div className="flex justify-between items-start mb-4">
-									<h2 className="text-2xl font-bold">{modalEvent.eventName}</h2>
-									<button onClick={() => setModalEvent(null)} className="text-gray-500 hover:text-gray-700">
-										✕
-									</button>
-								</div>
+								<div
+									className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto shadow-xl no-scrollbar"
+									onClick={(e) => e.stopPropagation()}
+								>
+									<div className="flex justify-between items-start mb-4">
+										<h2 className="text-2xl font-bold">{modalEvent.eventName}</h2>
+										<button onClick={() => setModalEvent(null)} className="text-gray-500 hover:text-gray-700">
+											✕
+										</button>
+									</div>
 
-								<div className="space-y-4">
-									<div className="flex gap-2">
-										<span className={`px-3 py-1 rounded text-sm font-medium border ${getImpactColor(modalEvent.impact)}`}>
-											{modalEvent.impact} Impact
-										</span>
-										{modalEvent.volatilityPrediction && (
-											<span className={`px-3 py-1 rounded text-sm font-medium ${getVolatilityBadge(modalEvent.volatilityPrediction)}`}>
-												{modalEvent.volatilityPrediction} Volatility
+									<div className="space-y-4">
+										<div className="flex gap-2">
+											<span className={`px-3 py-1 rounded text-sm font-medium border ${getImpactColor(modalEvent.impact)}`}>
+												{modalEvent.impact} Impact
 											</span>
-										)}
-									</div>
+											{modalEvent.volatilityPrediction && (
+												<span className={`px-3 py-1 rounded text-sm font-medium ${getVolatilityBadge(modalEvent.volatilityPrediction)}`}>
+													{modalEvent.volatilityPrediction} Volatility
+												</span>
+											)}
+										</div>
 
-									<div className="grid grid-cols-2 gap-4 text-sm">
-										<div>
-											<span className="text-gray-500">Currency:</span>
-											<span className="ml-2 font-medium">{modalEvent.currency}</span>
+										<div className="grid grid-cols-2 gap-4 text-sm">
+											<div>
+												<span className="text-gray-500">Currency:</span>
+												<span className="ml-2 font-medium">{modalEvent.currency}</span>
+											</div>
+											<div>
+												<span className="text-gray-500">Country:</span>
+												<span className="ml-2 font-medium">{modalEvent.country}</span>
+											</div>
+											<div>
+												<span className="text-gray-500">Date:</span>
+												<span className="ml-2 font-medium">{formatDate(modalEvent.eventDateTime)}</span>
+											</div>
+											<div>
+												<span className="text-gray-500">Time:</span>
+												<span className="ml-2 font-medium">{formatTime(modalEvent.eventDateTime)}</span>
+											</div>
 										</div>
-										<div>
-											<span className="text-gray-500">Country:</span>
-											<span className="ml-2 font-medium">{modalEvent.country}</span>
-										</div>
-										<div>
-											<span className="text-gray-500">Date:</span>
-											<span className="ml-2 font-medium">{formatDate(modalEvent.eventDateTime)}</span>
-										</div>
-										<div>
-											<span className="text-gray-500">Time:</span>
-											<span className="ml-2 font-medium">{formatTime(modalEvent.eventDateTime)}</span>
-										</div>
-									</div>
 
-									{modalEvent.aiRelevanceScore && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">AI Analysis</h3>
-											<div className="bg-blue-50 p-4 rounded-lg">
-												<div className="flex items-center gap-2 mb-3">
-													<span className="text-sm text-gray-700">Relevance Score:</span>
-													<span className={`text-lg font-bold ${getRelevanceColor(modalEvent.aiRelevanceScore)}`}>
-														{modalEvent.aiRelevanceScore}/100
-													</span>
+										{modalEvent.aiRelevanceScore && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">AI Analysis</h3>
+												<div className="bg-blue-50 p-4 rounded-lg">
+													<div className="flex items-center gap-2 mb-3">
+														<span className="text-sm text-gray-700">Relevance Score:</span>
+														<span className={`text-lg font-bold ${getRelevanceColor(modalEvent.aiRelevanceScore)}`}>
+															{modalEvent.aiRelevanceScore}/100
+														</span>
+													</div>
+													{modalEvent.aiReasoning && (
+														<p className="text-sm text-gray-700 mb-3">{modalEvent.aiReasoning}</p>
+													)}
+													{modalEvent.tradingRecommendation && (
+														<div className="bg-white p-3 rounded border border-blue-200">
+															<p className="text-sm font-medium text-blue-900">💡 Trading Recommendation:</p>
+															<p className="text-sm text-gray-700 mt-1">{modalEvent.tradingRecommendation}</p>
+														</div>
+													)}
 												</div>
-												{modalEvent.aiReasoning && (
-													<p className="text-sm text-gray-700 mb-3">{modalEvent.aiReasoning}</p>
-												)}
-												{modalEvent.tradingRecommendation && (
-													<div className="bg-white p-3 rounded border border-blue-200">
-														<p className="text-sm font-medium text-blue-900">💡 Trading Recommendation:</p>
-														<p className="text-sm text-gray-700 mt-1">{modalEvent.tradingRecommendation}</p>
+											</div>
+										)}
+
+										{modalEvent.aiSummary && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">AI Summary</h3>
+												<p className="text-sm text-gray-800 leading-relaxed">{modalEvent.aiSummary}</p>
+												{(modalEvent.newsHeadline || modalEvent.newsSource || modalEvent.newsUrl) && (
+													<div className="mt-3 text-sm text-gray-800">
+														{modalEvent.newsHeadline && <p className="font-medium text-gray-900">{modalEvent.newsHeadline}</p>}
+														<div className='mt-10 md:flex justify-between items-center'>
+															{modalEvent.newsSource && (
+																<p className="text-xs text-gray-600">Source: {modalEvent.newsSource}{modalEvent.newsPublishedAt ? ` • ${formatDateTime(modalEvent.newsPublishedAt)}` : ''}</p>
+															)}
+															{modalEvent.newsUrl && (
+																<div className="">
+																	<a href={modalEvent.newsUrl} target="_blank" rel="noopener noreferrer">
+																		<Button size="sm" className='bg-[#FF0000]' >Open Source</Button>
+																	</a>
+																</div>
+															)}
+														</div>
+
 													</div>
 												)}
 											</div>
-										</div>
-									)}
+										)}
 
-									{modalEvent.aiSummary && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">AI Summary</h3>
-											<p className="text-sm text-gray-800 leading-relaxed">{modalEvent.aiSummary}</p>
-											{(modalEvent.newsHeadline || modalEvent.newsSource || modalEvent.newsUrl) && (
-												<div className="mt-3 text-sm text-gray-800">
-													{modalEvent.newsHeadline && <p className="font-medium text-gray-900">{modalEvent.newsHeadline}</p>}
-													<div className='mt-10 md:flex justify-between items-center'>
-														{modalEvent.newsSource && (
-															<p className="text-xs text-gray-600">Source: {modalEvent.newsSource}{modalEvent.newsPublishedAt ? ` • ${formatDateTime(modalEvent.newsPublishedAt)}` : ''}</p>
-														)}
-														{modalEvent.newsUrl && (
-															<div className="">
-																<a href={modalEvent.newsUrl} target="_blank" rel="noopener noreferrer">
-																	<Button size="sm" className='bg-[#FF0000]' >Open Source</Button>
-																</a>
-															</div>
-														)}
+										{modalEvent.aiInDepthAnalysis && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">In-depth Analysis (AI)</h3>
+												<p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line">{modalEvent.aiInDepthAnalysis}</p>
+											</div>
+										)}
+
+										{modalEvent.description && (
+											<div className="border-t pt-4">
+												<h3 className="font-semibold mb-2">Description</h3>
+												<p className="text-sm text-gray-700">{modalEvent.description}</p>
+											</div>
+										)}
+
+										{(modalEvent.previous || modalEvent.forecast || modalEvent.actual) && (
+											<div className="border-t pt-3 grid grid-cols-3 gap-3 text-sm">
+												{modalEvent.previous && (
+													<div>
+														<p className="text-gray-500">Previous</p>
+														<p className="font-medium">{modalEvent.previous}</p>
 													</div>
-													
-												</div>
-											)}
-										</div>
-									)}
+												)}
+												{modalEvent.forecast && (
+													<div>
+														<p className="text-gray-500">Forecast</p>
+														<p className="font-medium">{modalEvent.forecast}</p>
+													</div>
+												)}
+												{modalEvent.actual && (
+													<div>
+														<p className="text-gray-500">Actual</p>
+														<p className="font-medium text-green-600">{modalEvent.actual}</p>
+													</div>
+												)}
+											</div>
+										)}
+									</div>
 
-									{modalEvent.aiInDepthAnalysis && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">In-depth Analysis (AI)</h3>
-											<p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line">{modalEvent.aiInDepthAnalysis}</p>
-										</div>
-									)}
-
-									{modalEvent.description && (
-										<div className="border-t pt-4">
-											<h3 className="font-semibold mb-2">Description</h3>
-											<p className="text-sm text-gray-700">{modalEvent.description}</p>
-										</div>
-									)}
-
-									{(modalEvent.previous || modalEvent.forecast || modalEvent.actual) && (
-										<div className="border-t pt-3 grid grid-cols-3 gap-3 text-sm">
-											{modalEvent.previous && (
-												<div>
-													<p className="text-gray-500">Previous</p>
-													<p className="font-medium">{modalEvent.previous}</p>
-												</div>
-											)}
-											{modalEvent.forecast && (
-												<div>
-													<p className="text-gray-500">Forecast</p>
-													<p className="font-medium">{modalEvent.forecast}</p>
-												</div>
-											)}
-											{modalEvent.actual && (
-												<div>
-													<p className="text-gray-500">Actual</p>
-													<p className="font-medium text-green-600">{modalEvent.actual}</p>
-												</div>
-											)}
-										</div>
-									)}
-								</div>
-
-								<div className="mt-6 flex justify-end ">
-									<Button onClick={() => setModalEvent(null)} className="bg-[#FF0000]">Close</Button>
+									<div className="mt-6 flex justify-end ">
+										<Button onClick={() => setModalEvent(null)} className="bg-[#FF0000]">Close</Button>
+									</div>
 								</div>
 							</div>
-						</div>
-					)
-				}
-				{cancelMessage && (<div className="mt-3 text-sm text-green-800 bg-green-50 border border-green-200 rounded-md px-3 py-2">{cancelMessage}</div>)}
-				<CancelSubscriptionDialog
-					open={cancelDialogOpen}
-					onOpenChange={setCancelDialogOpen}
-					user={user}
-					loading={subActionLoading}
-					onConfirm={async ({ immediate }) => {
-						try {
-							setSubActionLoading(true);
-							const res = await cancelSubscription({ immediate });
-							if (res.scheduled) {
-								setCancelMessage(`Cancellation scheduled for ${new Date(res.cancellationDate).toLocaleDateString()}`);
-							} else if (res.immediate) {
-								setCancelMessage('Subscription canceled');
+						)
+					}
+
+					{cancelMessage && (<div className="mt-3 text-sm text-green-800 bg-green-50 border border-green-200 rounded-md px-3 py-2">{cancelMessage}</div>)}
+					<CancelSubscriptionDialog
+						open={cancelDialogOpen}
+						onOpenChange={setCancelDialogOpen}
+						user={user}
+						loading={subActionLoading}
+						onConfirm={async ({ immediate }) => {
+							try {
+								setSubActionLoading(true);
+								const res = await cancelSubscription({ immediate });
+								if (res.scheduled) {
+									setCancelMessage(`Cancellation scheduled for ${new Date(res.cancellationDate).toLocaleDateString()}`);
+								} else if (res.immediate) {
+									setCancelMessage('Subscription canceled');
+								}
+								setCancelDialogOpen(false);
+								setTimeout(() => setCancelMessage(''), 8000);
+							} catch (err) {
+								alert(err.message || 'Failed to cancel subscription');
+							} finally {
+								setSubActionLoading(false);
 							}
-							setCancelDialogOpen(false);
-							setTimeout(() => setCancelMessage(''), 8000);
-						} catch (err) {
-							alert(err.message || 'Failed to cancel subscription');
-						} finally {
-							setSubActionLoading(false);
-						}
-					}}
-				/>
+						}}
+					/>
+
+				</div>
 			</div>
 		</div>
-	);
+	)
 }

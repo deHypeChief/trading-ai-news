@@ -7,6 +7,7 @@ export default function SubscriptionBadge({ user }) {
   const TRIAL_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
 
   const { label, className, tooltip } = useMemo(() => {
+    console.log('SubscriptionBadge compute', { sub, user });
     if (!sub) {
       // No subscription object; check if user was created within trial window and infer trial
       const created = user?.createdAt ? new Date(user.createdAt) : null;
@@ -29,6 +30,33 @@ export default function SubscriptionBadge({ user }) {
         className: 'bg-gray-100 text-gray-800 border border-gray-200',
         tooltip: 'You are on the free plan',
       };
+    }
+
+    // If trial has ended, show explicit 'Trial Ended'
+    if (sub.status === 'inactive' && sub.plan === 'free' && sub.trialEndsAt) {
+      const endedAt = new Date(sub.trialEndsAt);
+      if (!isNaN(endedAt.getTime())) {
+        return {
+          label: 'Trial Ended',
+          className: 'bg-red-100 text-red-800 border border-red-200',
+          tooltip: `Your trial ended on ${endedAt.toLocaleDateString()}`,
+        };
+      }
+    }
+
+    // If the user is explicitly on the free plan but has a renewal/cancellation date, show expiry info
+    if (sub.plan === 'free' && (sub.renewalDate || sub.cancellationDate)) {
+      const ends = sub.renewalDate ? new Date(sub.renewalDate) : new Date(sub.cancellationDate);
+      if (!isNaN(ends.getTime())) {
+        const msLeft = ends.getTime() - Date.now();
+        const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+        const daysLabel = daysLeft > 1 ? `${daysLeft} days left` : daysLeft === 1 ? '1 day left' : 'Ends today';
+        return {
+          label: `Free · ${daysLabel}`,
+          className: 'bg-gray-100 text-gray-800 border border-gray-200',
+          tooltip: `Free until ${ends.toLocaleDateString()} (${daysLabel})`,
+        };
+      }
     }
 
     if (sub.status === 'active') {

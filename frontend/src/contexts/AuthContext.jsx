@@ -136,6 +136,28 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('authUser');
   };
 
+  // Refresh profile from server and update stored user
+  const refreshProfile = async () => {
+    if (!token) throw new Error('Not authenticated');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/users/profile`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to refresh profile');
+      const data = await res.json();
+      if (data.success && data.data) {
+        const normalizedUser = normalizeUser(data.data);
+        setUser(normalizedUser);
+        localStorage.setItem('authUser', JSON.stringify(normalizedUser));
+        return normalizedUser;
+      }
+      throw new Error(data.error || 'Failed to refresh profile');
+    } catch (err) {
+      console.error('Refresh profile error:', err);
+      throw err;
+    }
+  };
+
   const updateUser = (updatedUserData) => {
     setUser((prevUser) => {
       const merged = {
@@ -207,6 +229,7 @@ export const AuthProvider = ({ children }) => {
         googleAuth,
         register,
         logout,
+        refreshProfile,
         updateUser,
         cancelSubscription,
         setUser,

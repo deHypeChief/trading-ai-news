@@ -28,7 +28,7 @@ const TIMEZONES = [
 
 
 export default function SettingsPage() {
-    const { user, logout, updateUser, cancelSubscription } = useAuth();
+    const { user, logout, updateUser, cancelSubscription, refreshProfile } = useAuth();
     const navigate = useNavigate();
     const [subActionLoading, setSubActionLoading] = useState(false);
     const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -506,6 +506,21 @@ export default function SettingsPage() {
                                             Cancel subscription
                                         </button>
                                     )}
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                const u = await refreshProfile();
+                                                console.log('Refreshed user:', u);
+                                                alert('Profile refreshed');
+                                            } catch (err) {
+                                                console.error('Refresh failed:', err);
+                                                alert('Failed to refresh profile');
+                                            }
+                                        }}
+                                        className="text-sm text-blue-600 underline"
+                                    >
+                                        Refresh profile
+                                    </button>
                                 </div>
                             </div>
 
@@ -531,6 +546,27 @@ export default function SettingsPage() {
                                     })()}
                                 </div>
                             ) : null}
+
+                            {user?.subscription?.plan === 'free' && (user?.subscription?.renewalDate || user?.subscription?.cancellationDate) && (
+                                (() => {
+                                    const ends = user.subscription?.renewalDate ? new Date(user.subscription.renewalDate) : new Date(user.subscription.cancellationDate);
+                                    if (!ends || isNaN(ends.getTime())) return null;
+                                    const msLeft = ends.getTime() - Date.now();
+                                    const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+                                    const daysLabel = daysLeft > 1 ? `${daysLeft} days left` : daysLeft === 1 ? '1 day left' : 'Ends today';
+                                    return (
+                                        <div className="mb-3 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+                                            Free until <strong>{ends.toLocaleDateString()}</strong> ({daysLabel})
+                                        </div>
+                                    );
+                                })()
+                            )}
+
+                            {user?.subscription?.status === 'inactive' && user?.subscription?.plan === 'free' && user?.subscription?.trialEndsAt && (
+                                <div className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                                    Your trial ended on <strong>{new Date(user.subscription.trialEndsAt).toLocaleDateString()}</strong>. Upgrade to continue using premium features.
+                                </div>
+                            )}
 
                             {loadingPlans ? (
                                 <div className="text-sm text-gray-500 text-center py-4">Loading plans...</div>

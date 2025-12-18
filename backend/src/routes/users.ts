@@ -32,6 +32,7 @@ export const userRoutes = new Elysia()
       }
 
       console.log('User found:', user._id);
+      console.log('User subscription:', JSON.stringify(user.subscription));
       return {
         success: true,
         data: {
@@ -40,6 +41,7 @@ export const userRoutes = new Elysia()
           email: user.email,
           timezone: user.timezone,
           createdAt: user.createdAt,
+          subscription: user.subscription || null,
         },
       };
     } catch (error) {
@@ -65,6 +67,7 @@ export const userRoutes = new Elysia()
           email: user.email,
           timezone: user.timezone,
           createdAt: user.createdAt,
+          subscription: user.subscription || null,
         },
       };
     } catch (error) {
