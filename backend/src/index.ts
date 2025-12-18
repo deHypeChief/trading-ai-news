@@ -67,52 +67,18 @@ console.log('[CORS] Allowed origins:', allowedOrigins.map(normalize))
 // CORS MUST be registered before any auth / rate-limit middleware
 app.use(
   cors({
-    origin: (incomingOrigin) => {
-      // Accept either a string origin or a Request-like object (e.g., BunRequest)
-      if (!incomingOrigin) return true
-
-      const extractOrigin = (inc: any): string | undefined => {
-        if (!inc) return undefined
-        if (typeof inc === 'string') return inc
-
-        // Request-like: headers.get exists
-        if (inc.headers && typeof inc.headers.get === 'function') {
-          return inc.headers.get('origin') || inc.headers.get('Origin') || undefined
-        }
-
-        // headers as plain object
-        if (inc.headers && typeof inc.headers === 'object') {
-          return inc.headers.origin || inc.headers.Origin || undefined
-        }
-
-        // url property (parse origin)
-        if (typeof inc.url === 'string') {
-          try {
-            return new URL(inc.url).origin
-          } catch (e) {
-            return undefined
-          }
-        }
-
-        if (typeof inc.origin === 'string') return inc.origin
-        return undefined
-      }
-
-      const incoming = extractOrigin(incomingOrigin)
-      const origin = normalize(incoming)
+    origin: (request: Request) => {
+      const origin = request.headers.get('origin') || undefined
+      if (!origin) return true
+      
+      const normalized = normalize(origin)
       const allowed = allowedOrigins.map(normalize)
 
-      if (origin && allowed.includes(origin)) {
-        // return boolean true to indicate the origin is allowed
+      if (normalized && allowed.includes(normalized)) {
         return true
       }
 
-      if (typeof incomingOrigin === 'object') {
-        console.warn('[CORS] Blocked origin (request-like):', incomingOrigin)
-      } else {
-        console.warn('[CORS] Blocked origin:', incomingOrigin)
-      }
-
+      console.warn('[CORS] Blocked origin:', origin)
       return false
     },
     credentials: true,
@@ -127,21 +93,59 @@ app.use(
 )
 
 // Hard stop for preflight — never allow OPTIONS to reach auth or rate limiter
-// Also log a small snapshot for short-lived diagnostics to confirm preflights reach the server
-app.options('*', (ctx) => {
+app.options('*', ({ set, request }) => {
   try {
-    const headers = (ctx as any).request?.headers
+    const headers = request?.headers
     let originHeader: string | undefined
     if (headers) {
-      if (typeof headers.get === 'function') originHeader = headers.get('origin') || headers.get('Origin')
-      else originHeader = headers.origin || headers.Origin
+      if (typeof headers.get === 'function') originHeader = headers.get('origin') || headers.get('Origin') || undefined
+      else originHeader = (headers as any).origin || (headers as any).Origin
     }
-    console.log('[CORS] OPTIONS preflight:', { origin: originHeader })
+    
+    const normalizedOrigin = normalize(originHeader)
+    const allowed = allowedOrigins.map(normalize)
+
+    console.log('[CORS] OPTIONS preflight:', { 
+      origin: originHeader, 
+      normalized: normalizedOrigin,
+      allowed: allowed,
+      isAllowed: originHeader && normalizedOrigin && allowed.includes(normalizedOrigin)
+    })
+
+    if (originHeader && normalizedOrigin && allowed.includes(normalizedOrigin)) {
+      // Set CORS headers using Elysia's correct API
+      set.headers['Access-Control-Allow-Origin'] = originHeader
+      set.headers['Access-Control-Allow-Credentials'] = 'true'
+      
+      // Get requested headers from preflight
+      let reqHeaders: string | undefined
+      if (headers && typeof headers.get === 'function') {
+        reqHeaders = headers.get('access-control-request-headers') || headers.get('Access-Control-Request-Headers') || undefined
+      } else if (headers) {
+        reqHeaders = (headers as any)['access-control-request-headers'] || (headers as any)['Access-Control-Request-Headers']
+      }
+
+      set.headers['Access-Control-Allow-Headers'] = reqHeaders || 'Content-Type, Authorization, X-Requested-With, Accept'
+      
+      // Get requested method
+      let reqMethod: string | undefined
+      if (headers && typeof headers.get === 'function') {
+        reqMethod = headers.get('access-control-request-method') || headers.get('Access-Control-Request-Method') || undefined
+      } else if (headers) {
+        reqMethod = (headers as any)['access-control-request-method'] || (headers as any)['Access-Control-Request-Method']
+      }
+
+      set.headers['Access-Control-Allow-Methods'] = reqMethod || 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
+      
+      console.log('[CORS] ✅ Allowed preflight for:', originHeader)
+    } else {
+      console.warn('[CORS] ❌ Blocked preflight origin:', originHeader)
+    }
   } catch (e) {
-    console.warn('[CORS] OPTIONS preflight log failed', e)
+    console.error('[CORS] OPTIONS handler error:', e)
   }
 
-  (ctx as any).set.status = 204
+  set.status = 204
   return null
 })
 
@@ -149,6 +153,7 @@ app.options('*', (ctx) => {
 /*                              Middleware                                    */
 /* -------------------------------------------------------------------------- */
 
+// Auth and rate limiting
 app
   .use(
     jwt({
