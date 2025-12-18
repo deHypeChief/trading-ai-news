@@ -50,12 +50,19 @@ const allowedOrigins = (
   'http://localhost:3000'
 )
   .split(',')
-  .map(s => s.trim())
+  .map((s) => String(s || '').trim())
   .filter(Boolean)
 
-const normalize = (url: string) => url.replace(/\/$/, '')
+const normalize = (url: any) => {
+  try {
+    return String(url).replace(/\/$/, '')
+  } catch (e) {
+    console.warn('[CORS] normalize failed for', url, e)
+    return ''
+  }
+}
 
-console.log('[CORS] Allowed origins:', allowedOrigins)
+console.log('[CORS] Allowed origins:', allowedOrigins.map(normalize))
 
 // CORS MUST be registered before any auth / rate-limit middleware
 app.use(
