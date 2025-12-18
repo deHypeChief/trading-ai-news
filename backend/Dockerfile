@@ -28,7 +28,9 @@ COPY --from=build /app/server server
 
 ENV NODE_ENV=production
 
-CMD ["./server"]FROM oven/bun:1.3.4
+CMD ["./server"]
+
+FROM oven/bun:1.3.4
 
 WORKDIR /app
 
@@ -36,7 +38,6 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY ./src ./src
-COPY ./static ./static
 
 ENV NODE_ENV=production
 
