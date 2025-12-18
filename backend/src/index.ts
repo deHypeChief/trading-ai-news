@@ -68,16 +68,51 @@ console.log('[CORS] Allowed origins:', allowedOrigins.map(normalize))
 app.use(
   cors({
     origin: (incomingOrigin) => {
+      // Accept either a string origin or a Request-like object (e.g., BunRequest)
       if (!incomingOrigin) return true
 
-      const origin = normalize(incomingOrigin)
-      const allowed = allowedOrigins.map(normalize)
+      const extractOrigin = (inc: any): string | undefined => {
+        if (!inc) return undefined
+        if (typeof inc === 'string') return inc
 
-      if (allowed.includes(origin)) {
-        return origin // echo exact origin
+        // Request-like: headers.get exists
+        if (inc.headers && typeof inc.headers.get === 'function') {
+          return inc.headers.get('origin') || inc.headers.get('Origin') || undefined
+        }
+
+        // headers as plain object
+        if (inc.headers && typeof inc.headers === 'object') {
+          return inc.headers.origin || inc.headers.Origin || undefined
+        }
+
+        // url property (parse origin)
+        if (typeof inc.url === 'string') {
+          try {
+            return new URL(inc.url).origin
+          } catch (e) {
+            return undefined
+          }
+        }
+
+        if (typeof inc.origin === 'string') return inc.origin
+        return undefined
       }
 
-      console.warn('[CORS] Blocked origin:', incomingOrigin)
+      const incoming = extractOrigin(incomingOrigin)
+      const origin = normalize(incoming)
+      const allowed = allowedOrigins.map(normalize)
+
+      if (origin && allowed.includes(origin)) {
+        // return boolean true to indicate the origin is allowed
+        return true
+      }
+
+      if (typeof incomingOrigin === 'object') {
+        console.warn('[CORS] Blocked origin (request-like):', incomingOrigin)
+      } else {
+        console.warn('[CORS] Blocked origin:', incomingOrigin)
+      }
+
       return false
     },
     credentials: true,
@@ -92,8 +127,21 @@ app.use(
 )
 
 // Hard stop for preflight — never allow OPTIONS to reach auth or rate limiter
-app.options('*', ({ set }) => {
-  set.status = 204
+// Also log a small snapshot for short-lived diagnostics to confirm preflights reach the server
+app.options('*', (ctx) => {
+  try {
+    const headers = (ctx as any).request?.headers
+    let originHeader: string | undefined
+    if (headers) {
+      if (typeof headers.get === 'function') originHeader = headers.get('origin') || headers.get('Origin')
+      else originHeader = headers.origin || headers.Origin
+    }
+    console.log('[CORS] OPTIONS preflight:', { origin: originHeader })
+  } catch (e) {
+    console.warn('[CORS] OPTIONS preflight log failed', e)
+  }
+
+  (ctx as any).set.status = 204
   return null
 })
 
