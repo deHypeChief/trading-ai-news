@@ -363,7 +363,7 @@ export default function Dashboard() {
 		if (!user) return alert('Not signed in');
 		setUpgradeLoading(planId);
 		try {
-			const cb = `${API_URL}/subscription/callback`;
+			const cb = `${window.location.origin}/subscription/callback`;
 			const resp = await fetch(`${API_URL}/api/paystack/init`, {
 				method: 'POST',
 				headers: {
