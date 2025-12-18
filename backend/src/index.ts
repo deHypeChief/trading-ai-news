@@ -41,7 +41,7 @@ app.onStart(async () => {
 })
 
 /* -------------------------------------------------------------------------- */
-/*                                CORS                                         */
+/*                                CORS (FIRST)                                */
 /* -------------------------------------------------------------------------- */
 
 const allowedOrigins = (
@@ -57,18 +57,17 @@ const normalize = (url: string) => url.replace(/\/$/, '')
 
 console.log('[CORS] Allowed origins:', allowedOrigins)
 
+// CORS MUST be registered before any auth / rate-limit middleware
 app.use(
   cors({
     origin: (incomingOrigin) => {
-      // Allow server-to-server or curl requests
       if (!incomingOrigin) return true
 
       const origin = normalize(incomingOrigin)
       const allowed = allowedOrigins.map(normalize)
 
       if (allowed.includes(origin)) {
-        // Must echo exact origin when credentials = true
-        return origin
+        return origin // echo exact origin
       }
 
       console.warn('[CORS] Blocked origin:', incomingOrigin)
@@ -85,7 +84,7 @@ app.use(
   })
 )
 
-// Ensure preflight requests never hit auth or rate-limits
+// Hard stop for preflight — never allow OPTIONS to reach auth or rate limiter
 app.options('*', ({ set }) => {
   set.status = 204
   return null
