@@ -81,55 +81,60 @@ export default function Dashboard() {
 		return () => clearInterval(timer);
 	}, []);
 
+	const fetchCalendarEvents = async () => {
+		try {
+			setLoadingEvents(true);
+			setEventsError('');
+
+			const startDate = new Date();
+			startDate.setHours(0, 0, 0, 0);
+			startDate.setDate(startDate.getDate() - 30); // Include past 30 days
+			const endDate = new Date(startDate);
+			endDate.setFullYear(endDate.getFullYear() + 1);
+
+			const params = new URLSearchParams({
+				startDate: startDate.toISOString(),
+				endDate: endDate.toISOString(),
+				limit: '1000',
+				offset: '0',
+			});
+
+			if (selectedCurrency) params.append('currency', selectedCurrency);
+			if (selectedImpact) params.append('impact', selectedImpact);
+			if (selectedCountry) params.append('country', selectedCountry);
+			if (minRelevance) params.append('minRelevance', minRelevance);
+
+			const res = await fetch(`${API_URL}/api/calendar?${params}`);
+			const data = await res.json();
+
+			if (!data.success) throw new Error(data.message || 'Failed to load events');
+
+			console.log('Fetched', data.data.events.length, 'events for calendar');
+			console.log('Date range:', startDate.toISOString(), 'to', endDate.toISOString());
+
+			// Sort by relevance desc then impact then time
+			const sorted = [...data.data.events].sort((a, b) => {
+				const relA = a.aiRelevanceScore ?? 0;
+				const relB = b.aiRelevanceScore ?? 0;
+				if (relB !== relA) return relB - relA;
+				const impactRank = { High: 3, Medium: 2, Low: 1 };
+				const impA = impactRank[a.impact] || 0;
+				const impB = impactRank[b.impact] || 0;
+				if (impB !== impA) return impB - impA;
+				return new Date(a.eventDateTime) - new Date(b.eventDateTime);
+			});
+
+			setTodayEvents(sorted);
+			setPage(1);
+		} catch (err) {
+			setEventsError(err.message || 'Failed to load events');
+		} finally {
+			setLoadingEvents(false);
+		}
+	};
+
 	useEffect(() => {
-		const fetchEvents = async () => {
-			try {
-				setLoadingEvents(true);
-				setEventsError('');
-
-				const startDate = new Date();
-				startDate.setHours(0, 0, 0, 0);
-				startDate.setDate(startDate.getDate() - 30); // Include past 30 days
-				const endDate = new Date(startDate);
-				endDate.setFullYear(endDate.getFullYear() + 1);
-
-				const params = new URLSearchParams({
-					startDate: startDate.toISOString(),
-					endDate: endDate.toISOString(),
-					limit: '1000',
-					offset: '0',
-				});
-
-				const res = await fetch(`${API_URL}/api/calendar?${params}`);
-				const data = await res.json();
-
-				if (!data.success) throw new Error(data.message || 'Failed to load events');
-
-				console.log('Fetched', data.data.events.length, 'events for calendar');
-				console.log('Date range:', startDate.toISOString(), 'to', endDate.toISOString());
-
-				// Sort by relevance desc then impact then time
-				const sorted = [...data.data.events].sort((a, b) => {
-					const relA = a.aiRelevanceScore ?? 0;
-					const relB = b.aiRelevanceScore ?? 0;
-					if (relB !== relA) return relB - relA;
-					const impactRank = { High: 3, Medium: 2, Low: 1 };
-					const impA = impactRank[a.impact] || 0;
-					const impB = impactRank[b.impact] || 0;
-					if (impB !== impA) return impB - impA;
-					return new Date(a.eventDateTime) - new Date(b.eventDateTime);
-				});
-
-				setTodayEvents(sorted);
-				setPage(1);
-			} catch (err) {
-				setEventsError(err.message || 'Failed to load events');
-			} finally {
-				setLoadingEvents(false);
-			}
-		};
-
-		fetchEvents();
+		fetchCalendarEvents();
 	}, [API_URL]);
 
 	useEffect(() => {
@@ -323,6 +328,7 @@ export default function Dashboard() {
 		fetchCurrencies();
 		fetchCountries();
 		fetchEvents();
+		fetchCalendarEvents();
 	}, [selectedCurrency, selectedImpact, selectedCountry, minRelevance]);
 
 	const fetchCurrencies = async () => {
