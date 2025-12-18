@@ -206,11 +206,23 @@ export default function Dashboard() {
 		Low: 'bg-yellow-100 text-yellow-700 border border-yellow-200',
 	};
 
-	// Build daily buckets for mini-calendar heatmap
+	// Build daily buckets for mini-calendar heatmap (respect active filters)
 	const dayBuckets = useMemo(() => {
 		const buckets = {};
-		console.log('Building dayBuckets from', todayEvents.length, 'events');
+
+		// Parse applied filters (set by Apply Filter)
+		const impacts = selectedImpact ? selectedImpact.split(',').map(s => s.trim()).filter(Boolean) : null;
+		const currenciesFilter = selectedCurrency ? selectedCurrency.split(',').map(s => s.trim()).filter(Boolean) : null;
+		const countriesFilter = selectedCountry ? selectedCountry.split(',').map(s => s.trim()).filter(Boolean) : null;
+
+		console.log('Building dayBuckets from', todayEvents.length, 'events', { impacts, currenciesFilter, countriesFilter });
+
 		todayEvents.forEach((evt) => {
+			// Skip events that don't match the currently applied filters
+			if (impacts && impacts.length && !impacts.includes(evt.impact)) return;
+			if (currenciesFilter && currenciesFilter.length && !currenciesFilter.includes(evt.currency)) return;
+			if (countriesFilter && countriesFilter.length && !countriesFilter.includes(evt.country)) return;
+
 			const d = new Date(evt.eventDateTime);
 			const key = formatDateKey(d);
 			if (!buckets[key]) buckets[key] = { high: 0, medium: 0, low: 0 };
@@ -218,9 +230,10 @@ export default function Dashboard() {
 			else if (evt.impact === 'Medium') buckets[key].medium += 1;
 			else buckets[key].low += 1;
 		});
-		console.log('Day buckets created:', Object.keys(buckets).length, 'days with events');
+
+		console.log('Day buckets created (filtered):', Object.keys(buckets).length, 'days with events');
 		return buckets;
-	}, [todayEvents]);
+	}, [todayEvents, selectedImpact, selectedCurrency, selectedCountry]);
 
 	const dayColor = (key) => {
 		const bucket = dayBuckets[key];
@@ -250,12 +263,24 @@ export default function Dashboard() {
 	};
 
 	const filteredEvents = useMemo(() => {
+		// If no date is selected, keep the full `todayEvents` list (server-side filters apply to `events`).
 		if (!selectedDate) return todayEvents;
+
+		const impacts = selectedImpact ? selectedImpact.split(',').map(s => s.trim()).filter(Boolean) : null;
+		const currenciesFilter = selectedCurrency ? selectedCurrency.split(',').map(s => s.trim()).filter(Boolean) : null;
+		const countriesFilter = selectedCountry ? selectedCountry.split(',').map(s => s.trim()).filter(Boolean) : null;
+
 		return todayEvents.filter((evt) => {
 			const key = formatDateKey(new Date(evt.eventDateTime));
-			return key === selectedDate;
+			if (key !== selectedDate) return false;
+
+			if (impacts && impacts.length && !impacts.includes(evt.impact)) return false;
+			if (currenciesFilter && currenciesFilter.length && !currenciesFilter.includes(evt.currency)) return false;
+			if (countriesFilter && countriesFilter.length && !countriesFilter.includes(evt.country)) return false;
+
+			return true;
 		});
-	}, [selectedDate, todayEvents]);
+	}, [selectedDate, todayEvents, selectedImpact, selectedCurrency, selectedCountry]);
 
 	// When a date is selected, use that subset for the main list; otherwise use paginated `events`.
 	const displayEvents = useMemo(() => {
@@ -772,7 +797,7 @@ export default function Dashboard() {
 				</div>
 
 				{/* Main Content */}
-				<div className="py-8 mt-10 md:mt">
+				<div className="py-8 mt-24 md:mt">
 					{/* Primary layout matching sketch */}
 					<div className='relative grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6 '>
 
