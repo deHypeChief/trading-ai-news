@@ -105,5 +105,5 @@ process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
 
-app.listen(3001)
-console.log('🦊 Elysia running at http://localhost:3001')
+app.listen(Bun.env.PORT || 3001)
+console.log(`🦊 Elysia running at http://localhost:${Bun.env.PORT || 3001}`)
