@@ -19,9 +19,15 @@ import { rateLimiter } from './middleware/rateLimiter'
 import { startAlertScheduler, stopAlertScheduler } from './services/alertScheduler'
 import { startCalendarSyncScheduler, stopCalendarSyncScheduler } from './services/calendarSync'
 
+/* -------------------------------------------------------------------------- */
+/*                                App setup                                   */
+/* -------------------------------------------------------------------------- */
+
 const app = new Elysia()
 
-/* -------------------- lifecycle -------------------- */
+/* -------------------------------------------------------------------------- */
+/*                               Lifecycle                                    */
+/* -------------------------------------------------------------------------- */
 
 app.onStart(async () => {
   await connectDB()
@@ -34,15 +40,62 @@ app.onStart(async () => {
   console.log('✅ All services initialized')
 })
 
-/* -------------------- middleware -------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                CORS                                         */
+/* -------------------------------------------------------------------------- */
+
+const allowedOrigins = (
+  process.env.FRONTEND_URLS ||
+  process.env.FRONTEND_URL ||
+  'http://localhost:3000'
+)
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+
+const normalize = (url: string) => url.replace(/\/$/, '')
+
+console.log('[CORS] Allowed origins:', allowedOrigins)
+
+app.use(
+  cors({
+    origin: (incomingOrigin) => {
+      // Allow server-to-server or curl requests
+      if (!incomingOrigin) return true
+
+      const origin = normalize(incomingOrigin)
+      const allowed = allowedOrigins.map(normalize)
+
+      if (allowed.includes(origin)) {
+        // Must echo exact origin when credentials = true
+        return origin
+      }
+
+      console.warn('[CORS] Blocked origin:', incomingOrigin)
+      return false
+    },
+    credentials: true,
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+  })
+)
+
+// Ensure preflight requests never hit auth or rate-limits
+app.options('*', ({ set }) => {
+  set.status = 204
+  return null
+})
+
+/* -------------------------------------------------------------------------- */
+/*                              Middleware                                    */
+/* -------------------------------------------------------------------------- */
 
 app
-  .use(
-    cors({
-      origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
-      credentials: true
-    })
-  )
   .use(
     jwt({
       name: 'jwt',
@@ -52,7 +105,9 @@ app
   .use(bearer())
   .use(rateLimiter())
 
-/* -------------------- core routes -------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                 Core routes                                 */
+/* -------------------------------------------------------------------------- */
 
 app
   .get('/', () => ({
@@ -66,7 +121,9 @@ app
     timestamp: new Date().toISOString()
   }))
 
-/* -------------------- plugins -------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                Plugins                                     */
+/* -------------------------------------------------------------------------- */
 
 app
   .use(websocketRoutes)
@@ -80,7 +137,9 @@ app
       .use(debugRoutes)
   )
 
-/* -------------------- errors -------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                  Errors                                    */
+/* -------------------------------------------------------------------------- */
 
 app.onError(({ code, error, set }) => {
   if (code === 'NOT_FOUND') {
@@ -93,7 +152,9 @@ app.onError(({ code, error, set }) => {
   return { error: 'Internal Server Error' }
 })
 
-/* -------------------- shutdown -------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                 Shutdown                                   */
+/* -------------------------------------------------------------------------- */
 
 const shutdown = async () => {
   stopAlertScheduler()
@@ -106,7 +167,9 @@ const shutdown = async () => {
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
-/* -------------------- listen -------------------- */
+/* -------------------------------------------------------------------------- */
+/*                                  Listen                                    */
+/* -------------------------------------------------------------------------- */
 
 app.listen(3001)
 console.log('🦊 Elysia running at http://localhost:3001')
