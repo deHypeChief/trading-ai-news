@@ -22,9 +22,22 @@ export const paymentsRouter = new Elysia({ prefix: '/api' })
   // Initialize payment with Paystack
   .post(
     '/paystack/init',
-    async ({ body, set }) => {
+    async ({ body, jwt, bearer, set }) => {
       try {
-        const { userId, planId, email, callbackUrl } = body;
+        // Require authentication and derive userId from token (more secure + avoids client omission)
+        if (!bearer) {
+          set.status = 401;
+          return { success: false, error: 'Unauthorized' };
+        }
+
+        const payload = await jwt.verify(bearer);
+        if (!payload || !payload.userId) {
+          set.status = 401;
+          return { success: false, error: 'Unauthorized - invalid token' };
+        }
+
+        const userId = payload.userId;
+        const { planId, email: clientEmail, callbackUrl } = body;
 
         // Validate plan
         const plan = PLANS[planId as keyof typeof PLANS];
@@ -39,6 +52,9 @@ export const paymentsRouter = new Elysia({ prefix: '/api' })
           set.status = 404;
           return { success: false, error: 'User not found' };
         }
+
+        // Prefer server-side email, fall back to client-supplied
+        const email = user.email || clientEmail;
 
         // Generate unique reference
         const reference = paystackService.generateReference();
@@ -77,9 +93,8 @@ export const paymentsRouter = new Elysia({ prefix: '/api' })
     },
     {
       body: t.Object({
-        userId: t.String(),
         planId: t.String(),
-        email: t.String(),
+        email: t.Optional(t.String()),
         callbackUrl: t.String()
       })
     }

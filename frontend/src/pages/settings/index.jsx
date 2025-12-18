@@ -132,6 +132,12 @@ export default function SettingsPage() {
             const token = localStorage.getItem('authToken');
             const callbackUrl = `${window.location.origin}/subscription/callback`;
 
+            if (!user?.id && !user?._id) {
+                alert('User ID missing — please log in again and try');
+                setInitiatingPayment(null);
+                return;
+            }
+
             const response = await fetch(`${API_URL}/api/paystack/init`, {
                 method: 'POST',
                 headers: {
@@ -139,7 +145,7 @@ export default function SettingsPage() {
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    userId: user._id,
+                    userId: user.id || user._id,
                     planId,
                     email: user.email,
                     callbackUrl
