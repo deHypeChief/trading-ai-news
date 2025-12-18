@@ -35,7 +35,9 @@ app.onStart(async () => {
 })
 
 // CORS - allow all origins for simplicity
-app.use(cors())
+app.use(cors({
+  origin: '*',
+}))
 
 // Auth and rate limiting
 app
