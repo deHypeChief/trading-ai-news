@@ -18,6 +18,7 @@ import { rateLimiter } from './middleware/rateLimiter'
 
 import { startAlertScheduler, stopAlertScheduler } from './services/alertScheduler'
 import { startCalendarSyncScheduler, stopCalendarSyncScheduler } from './services/calendarSync'
+import { allowedOrigins } from './config/cors.config'
 
 
 const app = new Elysia()
@@ -34,10 +35,14 @@ app.onStart(async () => {
   console.log('✅ All services initialized')
 })
 
-// CORS - allow all origins for simplicity
-app.use(cors({
-  origin: '*',
-}))
+  // CORS - allow all origins for simplicity
+  app.use(cors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
+    // exposedHeaders: ["Set-Cookie"]
+  }))
 
 // Auth and rate limiting
 app

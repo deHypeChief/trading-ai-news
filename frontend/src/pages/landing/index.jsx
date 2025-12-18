@@ -6,23 +6,23 @@ import { Zap, TrendingUp, AlertCircle, Calculator, Calendar, CheckCircle2, Arrow
 function Navbar() {
     return (
         <nav className="sticky top-0 z-50 w-full bg-white/95 backdrop-blur">
-            <div className="flex justify-between items-center py-5 px-20">
-                <div className="flex items-center space-x-20">
+            <div className="flex justify-between items-center py-4 px-4 sm:px-6 md:px-20">
+                <div className="flex items-center space-x-4 md:space-x-20">
                     <div className="flex items-center gap-2">
-            <img src="/smlogo.png" alt="" className='h-10 w-10'/>
+            <img src="/smlogo.png" alt="SMC logo" className='h-8 w-8 sm:h-10 sm:w-10'/>
                      
-                        <h1 className="text-2xl font-bold">SMC</h1>
+                        <h1 className="text-lg sm:text-2xl font-bold">SMC</h1>
                     </div>
                     <div className="space-x-8 hidden md:flex">
                        
                     </div>
                 </div>
-                <div className="space-x-4">
+                <div className="flex items-center space-x-2">
                     <Link to="/login">
-                        <Button className="rounded-full" size="lg" variant="outline">Login</Button>
+                        <Button className="rounded-full px-3 py-2 text-sm" variant="outline">Login</Button>
                     </Link>
                     <Link to="/signup">
-                        <Button className="rounded-full bg-[#FF0000]" size="lg">Create Account</Button>
+                        <Button className="rounded-full bg-[#FF0000] px-3 py-2 text-sm">Create Account</Button>
                     </Link>
                 </div>
             </div>
@@ -33,7 +33,7 @@ function Navbar() {
 function Footer() {
     return (
         <footer className="border-t bg-gray-50 ">
-            <div className="max-w-7xl mx-auto px-20">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-20">
                 {/* <div className="grid grid-cols-4 gap-8 mb-8">
                     <div>
                         <div className="flex items-center gap-2 mb-4">
@@ -99,17 +99,17 @@ function Features() {
     ]
 
     return (
-        <section id="features" className="py-20 px-20 bg-white">
+        <section id="features" className="py-12 px-6 sm:py-16 sm:px-8 md:py-20 md:px-20 bg-white">
             <div className="max-w-7xl mx-auto">
-                <div className="text-center mb-16">
-                    <h2 className="text-5xl font-bold mb-4">Everything you need to trade smarter</h2>
-                    <p className="text-xl text-gray-600">Stop guessing. Start knowing which events actually impact your trades.</p>
+                <div className="text-center mb-12">
+                    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4">Everything you need to trade smarter</h2>
+                    <p className="text-base sm:text-lg text-gray-600">Stop guessing. Start knowing which events actually impact your trades.</p>
                 </div>
-                <div className="grid grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
                     {features.map((feature, i) => (
-                        <div key={i} className="p-8 border rounded-lg hover:shadow-lg transition">
+                        <div key={i} className="p-6 sm:p-8 border rounded-lg hover:shadow-lg transition">
                             <div className="mb-4">{feature.icon}</div>
-                            <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>
+                            <h3 className="text-lg sm:text-xl font-semibold mb-2">{feature.title}</h3>
                             <p className="text-gray-600">{feature.description}</p>
                         </div>
                     ))}
@@ -121,13 +121,13 @@ function Features() {
 
 function Pricing() {
     return (
-        <section id="pricing" className="py-20 px-20 bg-gray-50">
+        <section id="pricing" className="py-12 px-6 sm:py-16 sm:px-8 md:py-20 md:px-20 bg-gray-50">
             <div className="max-w-7xl mx-auto">
-                <div className="text-center mb-16">
-                    <h2 className="text-5xl font-bold mb-4">Simple, transparent pricing</h2>
-                    <p className="text-xl text-gray-600">No hidden fees. Cancel anytime.</p>
+                <div className="text-center mb-12">
+                    <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4">Simple, transparent pricing</h2>
+                    <p className="text-base sm:text-lg text-gray-600">No hidden fees. Cancel anytime.</p>
                 </div>
-                <div className="grid grid-cols-2 gap-8 max-w-2xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-2xl mx-auto">
                     {/* Monthly */}
                     <div className="bg-white p-8 rounded-lg border">
                         <h3 className="text-2xl font-bold mb-2">Monthly</h3>
@@ -196,28 +196,28 @@ export default function LandingPage() {
     return (
         <div>
             {/* Hero Section */}
-            <div className="px-24 from-blue-50 to-white">
+            <div className="px-4 sm:px-6 md:px-24 from-blue-50 to-white">
                 <Navbar />
-                <div className="pt-32 h-screen flex items-end pb-32">
+                <div className="pt-24 md:pt-32 min-h-[60vh] md:h-screen flex items-end pb-16 md:pb-32">
                     <div>
                         <div className="flex gap-3 items-center pb-3">
-                            <div className="h-4 w-4 bg-green-500 rounded-full" />
-                            <p className="text-gray-700">1000+ active traders already using SMC</p>
+                            <div className="h-3 w-3 sm:h-4 sm:w-4 bg-green-500 rounded-full" />
+                            <p className="text-gray-700 text-sm sm:text-base">1000+ active traders already using SMC</p>
                         </div>
-                        <h1 className="text-7xl md:text-8xl font- capitalize leading-tight mb-6">
+                        <h1 className="text-3xl sm:text-4xl md:text-7xl lg:text-8xl capitalize leading-tight mb-4 sm:mb-6">
                             AI-powered<br />economic calendar
                         </h1>
-                        <p className="text-xl text-gray-600 mb-8 max-w-2xl">
-                            Know which economic events actually matter for your trades. Get AI-scored relevance and volatility predictions no more guessing.
+                        <p className="text-base sm:text-lg text-gray-600 mb-6 sm:mb-8 max-w-xl sm:max-w-2xl">
+                            Know which economic events actually matter for your trades. Get AI-scored relevance and volatility predictions — no more guessing.
                         </p>
-                        <div className="pt-6 space-x-6">
-                            <Link to="/signup">
-                                <Button className="rounded-full py-6 text-lg  px-28 bg-[#FF0000]" size="lg">
+                        <div className="pt-6 flex flex-col sm:flex-row gap-4 sm:gap-6">
+                            <Link to="/signup" className="w-full sm:w-auto">
+                                <Button className="rounded-full py-3 sm:py-4 px-6 sm:px-8 text-base sm:text-lg w-full sm:w-auto bg-[#FF0000]">
                                     Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
                                 </Button>
                             </Link>
-                            <Link to="/signup">
-                                <Button className="rounded-full px-8 py-6 text-lg" size="lg" variant="outline">
+                            <Link to="/signup" className="w-full sm:w-auto">
+                                <Button className="rounded-full px-6 py-3 sm:py-4 text-base sm:text-lg w-full sm:w-auto" variant="outline">
                                     View Calendar
                                 </Button>
                             </Link>
