@@ -7,11 +7,19 @@ import { debugConsole } from '../utils/debugConsole';
 
 let timer: NodeJS.Timeout | null = null;
 const DEFAULT_SYNC_INTERVAL_HOURS = 6;
+const DEFAULT_SYNC_DAYS = 3;
+const MAX_SYNC_DAYS = parseInt(process.env.CALENDAR_SYNC_MAX_DAYS || '30', 10);
 const syncIntervalHours = Math.max(
   1,
   parseInt(process.env.CALENDAR_SYNC_INTERVAL_HOURS || `${DEFAULT_SYNC_INTERVAL_HOURS}`, 10)
 );
-const syncIntervalMs = syncIntervalHours * 60 * 60 * 1000;
+// Determine how many days to sync per run (configurable via CALENDAR_SYNC_DAYS)
+const syncDaysRaw = Math.max(1, parseInt(process.env.CALENDAR_SYNC_DAYS || `${DEFAULT_SYNC_DAYS}`, 10));
+const syncDays = Math.min(syncDaysRaw, MAX_SYNC_DAYS);
+if (syncDaysRaw > MAX_SYNC_DAYS) {
+  console.warn(`[CalendarSync] CALENDAR_SYNC_DAYS (${syncDaysRaw}) exceeds CALENDAR_SYNC_MAX_DAYS (${MAX_SYNC_DAYS}), capping to ${syncDays}`);
+}
+const syncIntervalMs = syncIntervalHours * 60 * 60 * 1000; 
 
 async function performCalendarSync(days = 3) {
   const startDate = new Date();
@@ -175,15 +183,15 @@ async function performCalendarSync(days = 3) {
 export function startCalendarSyncScheduler() {
   if (timer) return;
 
-  // Run immediately on startup
-  performCalendarSync().catch((err) => console.error('[Calendar Sync] initial run failed:', err));
+  // Run immediately on startup (syncing configured number of days)
+  performCalendarSync(syncDays).catch((err) => console.error('[Calendar Sync] initial run failed:', err));
 
   // Run every configured interval (default 6 hours)
   timer = setInterval(() => {
-    performCalendarSync().catch((err) => console.error('[Calendar Sync] interval run failed:', err));
+    performCalendarSync(syncDays).catch((err) => console.error('[Calendar Sync] interval run failed:', err));
   }, syncIntervalMs);
 
-  console.log(`⏱️ Calendar sync scheduler started (every ${syncIntervalHours} hour(s))`);
+  console.log(`⏱️ Calendar sync scheduler started (every ${syncIntervalHours} hour(s), syncing ${syncDays} day(s) per run)`);
 }
 
 export function stopCalendarSyncScheduler() {

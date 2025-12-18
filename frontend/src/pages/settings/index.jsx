@@ -273,7 +273,7 @@ export default function SettingsPage() {
                             {/* <button onClick={() => setMenuOpen(!menuOpen)} className="sm:hidden p-2 rounded hover:bg-gray-100">
                                 <Menu className="h-6 w-6" />
                             </button> */}
-                            <div className="sm:flex items-center gap-3">
+                            <div className="flex items-center gap-3">
                                 {user && <SubscriptionBadge user={user} />}
                                 <div className="relative">
                                     <button
@@ -348,7 +348,7 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
-                <div className="pt-32 sm:pt-28 pb-12">
+                <div className="pt-40 sm:pt-28 pb-12">
                     <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
                         <div className="flex items-center gap-3">
                             <Settings className="h-5 w-5 text-blue-600" />

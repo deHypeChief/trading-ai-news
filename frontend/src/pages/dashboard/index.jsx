@@ -1,5 +1,5 @@
 /* eslint-disable react/react-in-jsx-scope */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
@@ -230,6 +230,25 @@ export default function Dashboard() {
 		return 'bg-red-100 text-red-700 border border-red-200';
 	};
 
+	// Date/time format helpers (hoisted before use to avoid temporal dead zone)
+	const formatDate = (dateString) => {
+		const date = new Date(dateString);
+		return date.toLocaleDateString('en-US', {
+			weekday: 'short',
+			month: 'short',
+			day: 'numeric'
+		});
+	};
+
+	const formatTime = (dateString) => {
+		const date = new Date(dateString);
+		return date.toLocaleTimeString('en-US', {
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: true
+		});
+	};
+
 	const filteredEvents = useMemo(() => {
 		if (!selectedDate) return todayEvents;
 		return todayEvents.filter((evt) => {
@@ -237,6 +256,11 @@ export default function Dashboard() {
 			return key === selectedDate;
 		});
 	}, [selectedDate, todayEvents]);
+
+	// When a date is selected, use that subset for the main list; otherwise use paginated `events`.
+	const displayEvents = useMemo(() => {
+		return selectedDate ? filteredEvents : events;
+	}, [selectedDate, filteredEvents, events]);
 
 	const hotStories = useMemo(() => {
 		const list = todayEvents
@@ -246,6 +270,16 @@ export default function Dashboard() {
 		return list;
 	}, [todayEvents]);
 
+	// Group using the currently displayed events (supports day-click filtering)
+	const groupedEvents = useMemo(() => {
+		const sorted = [...displayEvents].sort((a, b) => new Date(a.eventDateTime) - new Date(b.eventDateTime));
+		return sorted.reduce((acc, evt) => {
+			const key = formatDate(evt.eventDateTime);
+			if (!acc[key]) acc[key] = [];
+			acc[key].push(evt);
+			return acc;
+		}, {});
+	}, [displayEvents]);
 	useEffect(() => {
 		setStoryIndex(0);
 	}, [hotStories.length]);
@@ -271,9 +305,18 @@ export default function Dashboard() {
 
 	const isDaySelected = (key) => selectedDate === key;
 
+	const eventsContainerRef = useRef(null);
+
 	const handleDayClick = (key) => {
 		setSelectedDate((prev) => (prev === key ? null : key));
 		setPage(1);
+
+		// Scroll main events list into view so user sees chosen date results
+		setTimeout(() => {
+			if (eventsContainerRef.current && typeof eventsContainerRef.current.scrollIntoView === 'function') {
+				eventsContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			}
+		}, 50);
 	};
 
 	useEffect(() => {
@@ -446,34 +489,7 @@ export default function Dashboard() {
 		};
 		return colors[volatility] || 'bg-gray-500 text-white';
 	};
-
-	const formatDate = (dateString) => {
-		const date = new Date(dateString);
-		return date.toLocaleDateString('en-US', {
-			weekday: 'short',
-			month: 'short',
-			day: 'numeric'
-		});
-	};
-
-	const formatTime = (dateString) => {
-		const date = new Date(dateString);
-		return date.toLocaleTimeString('en-US', {
-			hour: '2-digit',
-			minute: '2-digit',
-			hour12: true
-		});
-	};
-
-	const groupedEvents = useMemo(() => {
-		const sorted = [...events].sort((a, b) => new Date(a.eventDateTime) - new Date(b.eventDateTime));
-		return sorted.reduce((acc, evt) => {
-			const key = formatDate(evt.eventDateTime);
-			if (!acc[key]) acc[key] = [];
-			acc[key].push(evt);
-			return acc;
-		}, {});
-	}, [events]);
+	// NOTE: `groupedEvents` is defined later (grouping `displayEvents`) to support calendar day filtering.
 
 	const formatDateTime = (dateString) => {
 		const date = new Date(dateString);
@@ -503,7 +519,7 @@ export default function Dashboard() {
 							{/* <button onClick={() => setMenuOpen(!menuOpen)} className="sm:hidden p-2 rounded hover:bg-gray-100">
 								<Menu className="h-6 w-6" />
 							</button> */}
-							<div className="sm:flex items-center gap-3">
+							<div className="flex items-center gap-3">
 								{user && <SubscriptionBadge user={user} />}
 								<div className="relative">
 									<button
@@ -732,14 +748,14 @@ export default function Dashboard() {
 														<div className="flex gap-3">
 															<button
 																onClick={() => setSelectedCountries(countries.reduce((acc, c) => ({ ...acc, [c]: true }), {}))}
-															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+																className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
 															>
 																all
 															</button>
 															<span className="text-gray-300">|</span>
 															<button
 																onClick={() => setSelectedCountries({})}
-															className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+																className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
 															>
 																none
 															</button>
@@ -757,7 +773,7 @@ export default function Dashboard() {
 															))
 														)}
 													</div>
-													</div>
+												</div>
 											</div>
 
 											{/* Action Buttons */}
@@ -808,13 +824,20 @@ export default function Dashboard() {
 										<AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
 										<p className="text-red-600">{error}</p>
 									</div>
-								) : events.length === 0 ? (
+								) : displayEvents.length === 0 ? (
 									<div className="p-12 text-center w-full">
 										<Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-										<p className="text-gray-600">No events found matching your filters</p>
+										{selectedDate ? (
+											<div>
+												<p className="text-gray-600 mb-3">No events for {selectedDate}</p>
+												<Button variant="ghost" size="sm" onClick={() => setSelectedDate(null)}>Show all events</Button>
+											</div>
+										) : (
+											<p className="text-gray-600">No events found matching your filters</p>
+										)}
 									</div>
 								) : (
-									<div className="overflow-x-auto">
+									<div className="overflow-x-auto" ref={eventsContainerRef}>
 										<table className="min-w-full text-sm">
 											<thead>
 												<tr className="bg-gray-50 text-gray-700">
@@ -918,7 +941,7 @@ export default function Dashboard() {
 										</table>
 
 										{/* Load More Button */}
-										{hasMoreEvents && (
+										{!selectedDate && hasMoreEvents && (
 											<div className="flex justify-center py-6">
 												<Button
 													onClick={handleLoadMore}
@@ -973,9 +996,11 @@ export default function Dashboard() {
 											<button
 												key={idx}
 												type="button"
-												onClick={() => hasEvents && handleDayClick(dateKey)}
+												onClick={() => handleDayClick(dateKey)}
+												aria-pressed={selected}
+												aria-label={`Select ${dateKey}`}
 												className={`h-8 sm:h-9 flex items-center justify-center rounded text-sm font-medium transition ${selected ? 'ring-2 ring-indigo-500 ring-offset-1' : ''
-													} ${hasEvents ? `${colorClass} hover:shadow-sm` : 'bg-gray-50 text-gray-400 cursor-not-allowed'}`}
+													} ${hasEvents ? `${colorClass} hover:shadow-sm` : 'bg-gray-50 text-gray-400'}`}
 											>
 												{day}
 											</button>
@@ -1238,15 +1263,22 @@ export default function Dashboard() {
 										<div className="border-t pt-4">
 											<h3 className="font-semibold mb-2">AI Summary</h3>
 											<p className="text-sm text-gray-800 leading-relaxed">{modalEvent.aiSummary}</p>
-											{(modalEvent.newsHeadline || modalEvent.newsSource) && (
+											{(modalEvent.newsHeadline || modalEvent.newsSource || modalEvent.newsUrl) && (
 												<div className="mt-3 text-sm text-gray-800">
 													{modalEvent.newsHeadline && <p className="font-medium text-gray-900">{modalEvent.newsHeadline}</p>}
-													{modalEvent.newsSource && (
-														<p className="text-xs text-gray-600">
-															Source: {modalEvent.newsSource}
-															{modalEvent.newsPublishedAt ? ` • ${formatDateTime(modalEvent.newsPublishedAt)}` : ''}
-														</p>
-													)}
+													<div className='mt-10 md:flex justify-between items-center'>
+														{modalEvent.newsSource && (
+															<p className="text-xs text-gray-600">Source: {modalEvent.newsSource}{modalEvent.newsPublishedAt ? ` • ${formatDateTime(modalEvent.newsPublishedAt)}` : ''}</p>
+														)}
+														{modalEvent.newsUrl && (
+															<div className="">
+																<a href={modalEvent.newsUrl} target="_blank" rel="noopener noreferrer">
+																	<Button size="sm" className='bg-[#FF0000]' >Open Source</Button>
+																</a>
+															</div>
+														)}
+													</div>
+													
 												</div>
 											)}
 										</div>
@@ -1290,8 +1322,8 @@ export default function Dashboard() {
 									)}
 								</div>
 
-								<div className="mt-6 flex justify-end">
-									<Button onClick={() => setModalEvent(null)}>Close</Button>
+								<div className="mt-6 flex justify-end ">
+									<Button onClick={() => setModalEvent(null)} className="bg-[#FF0000]">Close</Button>
 								</div>
 							</div>
 						</div>

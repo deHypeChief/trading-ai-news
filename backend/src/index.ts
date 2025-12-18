@@ -14,6 +14,7 @@ import { userRoutes } from './routes/users'
 import { debugRoutes } from './routes/debug'
 import { paymentsRouter } from './routes/payments'
 import { websocketRoutes, setupEventMonitoring } from './services/websocket'
+import { rateLimiter } from './middleware/rateLimiter'
 
 import { startAlertScheduler, stopAlertScheduler } from './services/alertScheduler'
 import { startCalendarSyncScheduler, stopCalendarSyncScheduler } from './services/calendarSync'
@@ -49,6 +50,7 @@ app
     })
   )
   .use(bearer())
+  .use(rateLimiter())
 
 /* -------------------- core routes -------------------- */
 
