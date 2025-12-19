@@ -797,7 +797,7 @@ export default function Dashboard() {
 				</div>
 
 				{/* Main Content */}
-				<div className="py-8 mt-24 md:mt-0">
+				<div className="py-8 mt-24 md:mt">
 					{/* Primary layout matching sketch */}
 					<div className='relative grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6 '>
 
