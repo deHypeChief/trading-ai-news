@@ -1081,9 +1081,9 @@ export default function Dashboard() {
 																								<p className="font-medium">Volatility</p>
 																								<p>Score: <span className="font-semibold">{event.volatilityScore ?? 'N/A'}</span></p>
 																								{event.pipRange ? (
-																									<p>Pip Range: <span className="font-semibold">{event.pipRange.pips} pips ({event.pipRange.low}–{event.pipRange.high})</span></p>
+																									<p>Pip Range: <span className="font-semibold">{event.pipRange.pips} pips ({event.pipRange.low || 'N/A'}–{event.pipRange.high || 'N/A'})</span></p>
 																								) : (
-																									<p>Pip Range: <span className="font-semibold">{event.expectedPipRange.min}–{event.expectedPipRange.max} pips</span></p>
+																									<p>Pip Range: <span className="font-semibold">{event.expectedPipRange.min || 'N/A'}–{event.expectedPipRange.max || 'N/A'} pips</span></p>
 																								)}
 																								<p>Window: <span className="font-semibold">{event.volatilityWindow ?? 'N/A'}</span></p>
 																								<p>Confidence: <span className="font-semibold">{event.confidenceScore ?? 'N/A'}</span></p>

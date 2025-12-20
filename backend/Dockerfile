@@ -39,10 +39,13 @@ RUN bun install --frozen-lockfile
 
 COPY ./src ./src
 
+# migrations
+# COPY ./scripts ./scripts
+# COPY ./docker-entrypoint.sh ./docker-entrypoint.sh
+# RUN chmod +x ./docker-entrypoint.sh
+
 ENV NODE_ENV=production
 
 EXPOSE 8000
+# ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["bun", "run", "src/index.ts"]
-
-
-EXPOSE 8000
