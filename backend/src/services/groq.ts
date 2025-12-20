@@ -386,3 +386,4 @@ export async function checkGroqHealth(): Promise<boolean> {
     return false;
   }
 }
+ 
