@@ -25,10 +25,10 @@ async function getPastEventsContext(currency: string, limit = 2): Promise<string
       aiAnalyzedAt: { $exists: true },
       eventDateTime: { $lt: new Date() }
     })
-    .sort({ eventDateTime: -1 })
-    .limit(limit)
-    .select('eventName aiReasoning tradingRecommendation volatilityPrediction realizedPipMove')
-    .lean();
+      .sort({ eventDateTime: -1 })
+      .limit(limit)
+      .select('eventName aiReasoning tradingRecommendation volatilityPrediction realizedPipMove')
+      .lean();
 
     if (pastEvents.length === 0) return '';
 
@@ -139,7 +139,7 @@ ${pastEventsContext}`;
           content: prompt,
         },
       ],
-      model: 'openai/gpt-oss-120b',
+      model: 'llama-3.3-70b-versatile',
       temperature: 0.3,
       max_tokens: 500,
       response_format: { type: 'json_object' },
@@ -198,8 +198,8 @@ ${pastEventsContext}`;
         { role: 'system', content: 'You are a macro volatility analyst with historical context. Output JSON only.' },
         { role: 'user', content: prompt },
       ],
-      model: 'openai/gpt-oss-120b',
-      temperature: 0.2,
+     model: 'llama-3.3-70b-versatile',
+      temperature: 0.35,
       max_tokens: 400,
       response_format: { type: 'json_object' },
     });
@@ -252,9 +252,9 @@ Content: ${safeContent}`;
         },
         { role: 'user', content: prompt },
       ],
-      model: 'openai/gpt-oss-120b',
-      temperature: 0.4,
-      max_tokens: 220,
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.35,
+      max_tokens: 360,
     });
 
     const summary = completion.choices[0]?.message?.content?.trim() || '';
@@ -290,9 +290,9 @@ ${pastEventsContext}`;
         { role: 'system', content: 'You are a concise macro analyst for FX/indices. Keep to 70-80 words.' },
         { role: 'user', content: prompt },
       ],
-      model: 'openai/gpt-oss-120b',
+      model: 'llama-3.3-70b-versatile',
       temperature: 0.35,
-      max_tokens: 200,
+      max_tokens: 360,
     });
 
     return completion.choices[0]?.message?.content?.trim() || '';
@@ -377,7 +377,7 @@ export async function checkGroqHealth(): Promise<boolean> {
   try {
     const completion = await groqChatWithRetry({
       messages: [{ role: 'user', content: 'ping' }],
-      model: 'openai/gpt-oss-120b',
+      model: 'llama-3.3-70b-versatile',
       max_tokens: 5,
     });
     return !!completion.choices[0];

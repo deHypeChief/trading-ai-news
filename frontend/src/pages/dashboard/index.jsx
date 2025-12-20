@@ -1081,10 +1081,10 @@ export default function Dashboard() {
 																								<p className="font-medium">Volatility</p>
 																								<p>Score: <span className="font-semibold">{event.volatilityScore ?? 'N/A'}</span></p>
 																								{event.pipRange ? (
-																									<p>Pip Range: <span className="font-semibold">{event.pipRange.pips} pips ({event.pipRange.low || 'N/A'}–{event.pipRange.high || 'N/A'})</span></p>
-																								) : (
-																									<p>Pip Range: <span className="font-semibold">{event.expectedPipRange.min || 'N/A'}–{event.expectedPipRange.max || 'N/A'} pips</span></p>
-																								)}
+																															<p>Pip Range: <span className="font-semibold">{event.pipRange.pips ?? 'N/A'} pips ({event.pipRange.low ?? event.pipRange.min ?? 'N/A'}–{event.pipRange.high ?? event.pipRange.max ?? 'N/A'})</span></p>
+																																) : (
+																																	<p>Pip Range: <span className="font-semibold">{event.expectedPipRange?.min ?? 'N/A'}–{event.expectedPipRange?.max ?? 'N/A'} pips</span></p>
+																																)}
 																								<p>Window: <span className="font-semibold">{event.volatilityWindow ?? 'N/A'}</span></p>
 																								<p>Confidence: <span className="font-semibold">{event.confidenceScore ?? 'N/A'}</span></p>
 																							</div>
@@ -1151,9 +1151,9 @@ export default function Dashboard() {
 																							
 																							<div>
 																								<span className="text-gray-500">Pip Range:</span>
-																								<span className="ml-2 font-medium">
-																									{event.pipRange ? `${event.pipRange.pips} pips (${event.pipRange.low}–${event.pipRange.high})` : (event.expectedPipRange ? `${event.expectedPipRange.min}–${event.expectedPipRange.max}` : '—')}
-																								</span>
+																									<span className="ml-2 font-medium">
+																										{event.pipRange ? `${event.pipRange.pips ?? 'N/A'} pips (${event.pipRange.low ?? event.pipRange.min ?? 'N/A'}–${event.pipRange.high ?? event.pipRange.max ?? 'N/A'})` : (event.expectedPipRange ? `${event.expectedPipRange.min ?? 'N/A'}–${event.expectedPipRange.max ?? 'N/A'}` : '—')}
+																									</span>
 																							</div>
 																							<div>
 																								<span className="text-gray-500">Window:</span>
