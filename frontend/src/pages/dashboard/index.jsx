@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
 import SubscriptionBadge from '@/components/ui/subscription-badge.jsx';
 import CancelSubscriptionDialog from '@/components/subscription/CancelSubscriptionDialog.jsx';
-import { Calendar, LogOut, Clock3, ChevronLeft, ChevronRight, AlertCircle, Filter, Menu, X, User, Settings } from 'lucide-react';
+import { Calendar, LogOut, Clock3, ChevronLeft, ChevronRight, AlertCircle, Filter, Menu, X, User, Settings, TrendingUp } from 'lucide-react';
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card.jsx';
 
 const TIMEZONES = [
 	{ value: 'America/New_York', label: 'Eastern Time (ET)' },
@@ -62,7 +63,7 @@ export default function Dashboard() {
 	const [selectedCurrency, setSelectedCurrency] = useState('');
 	const [selectedImpact, setSelectedImpact] = useState('');
 	const [selectedCountry, setSelectedCountry] = useState('');
-	const [selectedImpactLevels, setSelectedImpactLevels] = useState({ High: true, Medium: true, Low: false });
+	const [selectedImpactLevels, setSelectedImpactLevels] = useState({ High: false, Medium: false, Low: false });
 	const [minRelevance] = useState('');
 	const [currencies, setCurrencies] = useState([]);
 	const [countries, setCountries] = useState([]);
@@ -198,7 +199,19 @@ export default function Dashboard() {
 		};
 	}, []);
 
-	const formatDateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	const formatDateKey = useMemo(() => (d) => {
+		const formatter = new Intl.DateTimeFormat('en-US', {
+			timeZone: displayTimezone,
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit'
+		});
+		const parts = formatter.formatToParts(d);
+		const year = parts.find(p => p.type === 'year').value;
+		const month = parts.find(p => p.type === 'month').value;
+		const day = parts.find(p => p.type === 'day').value;
+		return `${year}-${month}-${day}`;
+	}, [displayTimezone]);
 
 	const impactColor = {
 		High: 'bg-red-100 text-red-700 border border-red-200',
@@ -244,23 +257,25 @@ export default function Dashboard() {
 	};
 
 	// Date/time format helpers (hoisted before use to avoid temporal dead zone)
-	const formatDate = (dateString) => {
+	const formatDate = useMemo(() => (dateString) => {
 		const date = new Date(dateString);
 		return date.toLocaleDateString('en-US', {
 			weekday: 'short',
 			month: 'short',
-			day: 'numeric'
+			day: 'numeric',
+			timeZone: displayTimezone
 		});
-	};
+	}, [displayTimezone]);
 
-	const formatTime = (dateString) => {
+	const formatTime = useMemo(() => (dateString) => {
 		const date = new Date(dateString);
 		return date.toLocaleTimeString('en-US', {
 			hour: '2-digit',
 			minute: '2-digit',
-			hour12: true
+			hour12: true,
+			timeZone: displayTimezone
 		});
-	};
+	}, [displayTimezone]);
 
 	const filteredEvents = useMemo(() => {
 		// If no date is selected, keep the full `todayEvents` list (server-side filters apply to `events`).
@@ -561,6 +576,8 @@ export default function Dashboard() {
 			}
 
 			updateUser(data.user || { timezone: tz });
+			// Reload the page to apply the new timezone
+			window.location.reload();
 		} catch (err) {
 			setDisplayTimezone(previousTz);
 			setTimezoneError(err.message || 'Failed to update timezone');
@@ -599,9 +616,21 @@ export default function Dashboard() {
 		};
 		return colors[volatility] || 'bg-gray-500 text-white';
 	};
+
+	const getVolatilityColorByScore = (score) => {
+		if (!score) return 'bg-gray-100 text-gray-700 border-gray-200';
+		switch (score) {
+			case 1: return 'bg-green-100 text-green-800 border-green-200';
+			case 2: return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+			case 3: return 'bg-yellow-400 text-white border-yellow-500';
+			case 4: return 'bg-orange-500 text-white border-orange-400';
+			case 5: return 'bg-red-600 text-white border-red-500';
+			default: return 'bg-gray-100 text-gray-700 border-gray-200';
+		}
+	};
 	// NOTE: `groupedEvents` is defined later (grouping `displayEvents`) to support calendar day filtering.
 
-	const formatDateTime = (dateString) => {
+	const formatDateTime = useMemo(() => (dateString) => {
 		const date = new Date(dateString);
 		return date.toLocaleString('en-US', {
 			weekday: 'short',
@@ -610,8 +639,9 @@ export default function Dashboard() {
 			hour: '2-digit',
 			minute: '2-digit',
 			hour12: true,
+			timeZone: displayTimezone
 		});
-	};
+	}, [displayTimezone]);
 
 	return (
 		<div className="min-h-screen bg-gray-50" style={{ zoom: '90%' }}>
@@ -718,26 +748,26 @@ export default function Dashboard() {
 					</div>
 				)}
 
-{/* Trial ended modal (non-dismissible) */}
-		{showTrialEndedModal && (
-			<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[20] backdrop-blur-sm" role="dialog" aria-modal="true">
-				<div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 mx-4" onClick={(e) => e.stopPropagation()}>
-					<div className="flex items-start justify-between mb-4">
-						<div>
-							<h3 className="text-lg font-bold">Your access has ended</h3>
-							<p className="text-sm text-gray-600 mt-1">Your free trial or subscription has ended. Upgrade to continue using premium features.</p>
-						</div>
-					</div>
-					<div className="space-y-4">
-						<div className="flex gap-3">
-							<button className="flex-1 bg-black text-white py-2 rounded" onClick={() => handleUpgrade('monthly')} disabled={upgradeLoading === 'monthly'}>
-								{upgradeLoading === 'monthly' ? 'Processing…' : 'Upgrade to Monthly'}
-							</button>
-							<button className="flex-1 border border-gray-200 py-2 rounded" onClick={() => handleUpgrade('yearly')} disabled={upgradeLoading === 'yearly'}>
-								{upgradeLoading === 'yearly' ? 'Processing…' : 'Upgrade to Yearly'}
-							</button>
-						</div>
-						<div className="text-xs text-gray-500">If you think this is an error, please contact support.</div>
+				{/* Trial ended modal (non-dismissible) */}
+				{showTrialEndedModal && (
+					<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[20] backdrop-blur-sm" role="dialog" aria-modal="true">
+						<div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 mx-4" onClick={(e) => e.stopPropagation()}>
+							<div className="flex items-start justify-between mb-4">
+								<div>
+									<h3 className="text-lg font-bold">Your access has ended</h3>
+									<p className="text-sm text-gray-600 mt-1">Your free trial or subscription has ended. Upgrade to continue using premium features.</p>
+								</div>
+							</div>
+							<div className="space-y-4">
+								<div className="flex gap-3">
+									<button className="flex-1 bg-black text-white py-2 rounded" onClick={() => handleUpgrade('monthly')} disabled={upgradeLoading === 'monthly'}>
+										{upgradeLoading === 'monthly' ? 'Processing…' : 'Upgrade to Monthly'}
+									</button>
+									<button className="flex-1 border border-gray-200 py-2 rounded" onClick={() => handleUpgrade('yearly')} disabled={upgradeLoading === 'yearly'}>
+										{upgradeLoading === 'yearly' ? 'Processing…' : 'Upgrade to Yearly'}
+									</button>
+								</div>
+								<div className="text-xs text-gray-500">If you think this is an error, please contact support.</div>
 							</div>
 						</div>
 					</div>
@@ -830,7 +860,7 @@ export default function Dashboard() {
 														<h3 className="font-semibold text-gray-900 text-sm">Expected Impact</h3>
 														<div className="flex gap-3">
 															<button
-																onClick={() => setSelectedImpactLevels({ High: true, Medium: true, Low: false })}
+																onClick={() => setSelectedImpactLevels({ High: true, Medium: true, Low: true })}
 																className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
 															>
 																all
@@ -1022,7 +1052,45 @@ export default function Dashboard() {
 																				<span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
 																					{event.country}
 																				</span>
+																				{event.volatilityScore ? (
+																					<div className="flex items-center gap-0.5">
+																						{[1, 2, 3, 4, 5].map((bar) => (
+																							<div
+																								key={bar}
+																								className={`w-1 h-3 rounded-sm ${
+																									bar <= event.volatilityScore
+																										? event.volatilityScore === 1 ? 'bg-green-500' :
+																										  event.volatilityScore === 2 ? 'bg-yellow-500' :
+																										  event.volatilityScore === 3 ? 'bg-yellow-600' :
+																										  event.volatilityScore === 4 ? 'bg-orange-500' :
+																										  'bg-red-500'
+																										: 'bg-gray-300'
+																								}`}
+																							/>
+																						))}
+																					</div>
+																				) : null}
 																				<span className="font-semibold text-gray-900 text-sm sm:text-base">{event.eventName}</span>
+																				{(event.pipRange || event.expectedPipRange) ? (
+																					<HoverCard>
+																						<HoverCardTrigger>
+																							<TrendingUp className="w-4 h-4 text-gray-500 ml-1" />
+																						</HoverCardTrigger>
+																						<HoverCardContent>
+																							<div className="text-sm">
+																								<p className="font-medium">Volatility</p>
+																								<p>Score: <span className="font-semibold">{event.volatilityScore ?? 'N/A'}</span></p>
+																								{event.pipRange ? (
+																									<p>Pip Range: <span className="font-semibold">{event.pipRange.pips} pips ({event.pipRange.low}–{event.pipRange.high})</span></p>
+																								) : (
+																									<p>Pip Range: <span className="font-semibold">{event.expectedPipRange.min}–{event.expectedPipRange.max} pips</span></p>
+																								)}
+																								<p>Window: <span className="font-semibold">{event.volatilityWindow ?? 'N/A'}</span></p>
+																								<p>Confidence: <span className="font-semibold">{event.confidenceScore ?? 'N/A'}</span></p>
+																							</div>
+																						</HoverCardContent>
+																					</HoverCard>
+																				) : null}
 																			</div>
 																			{/* <div className="text-xs text-gray-500">{event.currency}</div> */}
 																		</td>
@@ -1077,7 +1145,38 @@ export default function Dashboard() {
 																							)}
 																						</div>
 																					)}
-																					<Button size="sm" onClick={() => setSelectedEvent(event)}>View more</Button>
+																					{/* Volatility details */}
+																					<div className="mt-3 border-t pt-3">
+																						<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-2">
+																							
+																							<div>
+																								<span className="text-gray-500">Pip Range:</span>
+																								<span className="ml-2 font-medium">
+																									{event.pipRange ? `${event.pipRange.pips} pips (${event.pipRange.low}–${event.pipRange.high})` : (event.expectedPipRange ? `${event.expectedPipRange.min}–${event.expectedPipRange.max}` : '—')}
+																								</span>
+																							</div>
+																							<div>
+																								<span className="text-gray-500">Window:</span>
+																								<span className="ml-2 font-medium">{event.volatilityWindow ?? '—'}</span>
+																							</div>
+																							<div>
+																								<span className="text-gray-500">Confidence:</span>
+																								<span className="ml-2 font-medium">{event.confidenceScore ?? '—'}</span>
+																							</div>
+																						</div>
+																						{event.drivers && event.drivers.length > 0 && (
+																							<div className="mt-2 text-sm">
+																								<p className="text-gray-600">Drivers:</p>
+																								<ul className="list-disc list-inside text-gray-800">
+																									{event.drivers.map((d, i) => <li key={`driver-${i}`}>{d}</li>)}
+																								</ul>
+																							</div>
+																						)}
+																						{event.executionNotes && (
+																							<p className="mt-2 text-sm">Execution: <span className="font-medium">{event.executionNotes}</span></p>
+																						)}
+																						<Button size="sm" onClick={() => setSelectedEvent(event)} className="mt-5">View more</Button>
+																					</div>
 																				</div>
 																			</td>
 																		</tr>
@@ -1107,6 +1206,7 @@ export default function Dashboard() {
 								)}
 							</div>
 						</div>
+
 						<div className="lg:sticky space-y-6 h-fit lg:top-32 order-1 lg:order-2">
 							<div className="bg-white rounded-lg shadow p-4 h-fit">
 								<div className="flex items-center justify-between mb-3">
@@ -1246,7 +1346,7 @@ export default function Dashboard() {
 								</div>
 
 								<div className="space-y-4">
-									<div className="flex gap-2">
+									<div className="flex  gap-2">
 										<span className={`px-3 py-1 rounded text-sm font-medium border ${getImpactColor(selectedEvent.impact)}`}>
 											{selectedEvent.impact} Impact
 										</span>
@@ -1255,64 +1355,74 @@ export default function Dashboard() {
 												{selectedEvent.volatilityPrediction} Volatility
 											</span>
 										)}
+									</div>
 
-										{selectedEvent.aiRelevanceScore && (
-											<div className="border-t pt-4">
-												<h3 className="font-semibold mb-2">AI Analysis</h3>
-												<div className="bg-blue-50 p-4 rounded-lg">
-													<div className="flex items-center gap-2 mb-3">
-														<span className="text-sm text-gray-700">Relevance Score:</span>
-														<span className={`text-lg font-bold ${getRelevanceColor(selectedEvent.aiRelevanceScore)}`}>
-															{selectedEvent.aiRelevanceScore}/100
-														</span>
-													</div>
-													{selectedEvent.aiReasoning && (
-														<p className="text-sm text-gray-700 mb-3">{selectedEvent.aiReasoning}</p>
-													)}
-													{selectedEvent.tradingRecommendation && (
-														<div className="bg-white p-3 rounded border border-blue-200">
-															<p className="text-sm font-medium text-blue-900">💡 Trading Recommendation:</p>
-															<p className="text-sm text-gray-700 mt-1">{selectedEvent.tradingRecommendation}</p>
-														</div>
-													)}
+									{selectedEvent.aiRelevanceScore && (
+										<div className="border-t pt-4">
+											<h3 className="font-semibold mb-2">AI Analysis</h3>
+											<div className="bg-blue-50 p-4 rounded-lg">
+												<div className="flex items-center gap-2 mb-3">
+													<span className="text-sm text-gray-700">Relevance Score:</span>
+													<span className={`text-lg font-bold ${getRelevanceColor(selectedEvent.aiRelevanceScore)}`}>
+														{selectedEvent.aiRelevanceScore}/100
+													</span>
 												</div>
-											</div>
-										)}
-
-
-										{selectedEvent.aiSummary && (
-											<div className="border-t pt-4">
-												<h3 className="font-semibold mb-2">AI Summary</h3>
-												<p className="text-sm text-gray-800 leading-relaxed">{selectedEvent.aiSummary}</p>
-												{/* <p className="text-sm text-gray-700 mt-2 italic">{historicalHint(selectedEvent)}</p> */}
-												{(selectedEvent.newsHeadline || selectedEvent.newsSource) && (
-													<div className="mt-3 text-sm text-gray-800">
-														{selectedEvent.newsHeadline && <p className="font-medium text-gray-900">{selectedEvent.newsHeadline}</p>}
-														{selectedEvent.newsSource && (
-															<p className="text-xs text-gray-600">Source: {selectedEvent.newsSource}{selectedEvent.newsPublishedAt ? ` • ${formatDateTime(selectedEvent.newsPublishedAt)}` : ''}</p>
-														)}
+												{selectedEvent.aiReasoning && (
+													<p className="text-sm text-gray-700 mb-3">{selectedEvent.aiReasoning}</p>
+												)}
+												{selectedEvent.tradingRecommendation && (
+													<div className="bg-white p-3 rounded border border-blue-200">
+														<p className="text-sm font-medium text-blue-900">💡 Trading Recommendation:</p>
+														<p className="text-sm text-gray-700 mt-1">{selectedEvent.tradingRecommendation}</p>
 													</div>
 												)}
 											</div>
-										)}
+										</div>
+									)}
 
-										{selectedEvent.aiInDepthAnalysis && (
-											<div className="border-t pt-4">
-												<h3 className="font-semibold mb-2">In-depth Analysis (AI)</h3>
-												<p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line">{selectedEvent.aiInDepthAnalysis}</p>
-											</div>
-										)}
 
-										{selectedEvent.description && (
-											<div className="border-t pt-4">
-												<h3 className="font-semibold mb-2">Description</h3>
-												<p className="text-sm text-gray-700">{selectedEvent.description}</p>
-											</div>
-										)}
-									</div>
+									{selectedEvent.aiSummary && (
+										<div className="border-t pt-4">
+											<h3 className="font-semibold mb-2">AI Summary</h3>
+											<p className="text-sm text-gray-800 leading-relaxed">{selectedEvent.aiSummary}</p>
+											{/* <p className="text-sm text-gray-700 mt-2 italic">{historicalHint(selectedEvent)}</p> */}
+											{(selectedEvent.newsHeadline || selectedEvent.newsSource || selectedEvent.newsUrl) && (
+												<div className="mt-3 text-sm text-gray-800">
+													{selectedEvent.newsHeadline && <p className="font-medium text-gray-900">{selectedEvent.newsHeadline}</p>}
+													<div className='mt-10 md:flex justify-between items-center'>
+														{selectedEvent.newsSource && (
+															<p className="text-xs text-gray-600">Source: {selectedEvent.newsSource}{selectedEvent.newsPublishedAt ? ` • ${formatDateTime(selectedEvent.newsPublishedAt)}` : ''}</p>
+														)}
+														{selectedEvent.newsUrl && (
+															<div className="">
+																<a href={selectedEvent.newsUrl} target="_blank" rel="noopener noreferrer">
+																	<Button size="sm" className='bg-[#FF0000]' >Open Source</Button>
+																</a>
+															</div>
+														)}
+													</div>
+
+												</div>
+											)}
+										</div>
+									)}
+
+									{selectedEvent.aiInDepthAnalysis && (
+										<div className="border-t pt-4">
+											<h3 className="font-semibold mb-2">In-depth Analysis (AI)</h3>
+											<p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line">{selectedEvent.aiInDepthAnalysis}</p>
+										</div>
+									)}
+
+									{selectedEvent.description && (
+										<div className="border-t pt-4">
+											<h3 className="font-semibold mb-2">Description</h3>
+											<p className="text-sm text-gray-700">{selectedEvent.description}</p>
+										</div>
+									)}
 
 									<div className="mt-6 flex justify-end">
-										<Button onClick={() => setSelectedEvent(null)}>Close</Button>
+										<Button onClick={() => setSelectedEvent(null)} className="bg-[#FF0000]">Close</Button>
 									</div>
 								</div>
 							</div>
@@ -1489,6 +1599,6 @@ export default function Dashboard() {
 
 				</div>
 			</div>
-		</div>
+		</div >
 	)
 }

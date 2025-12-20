@@ -253,6 +253,8 @@ export default function SettingsPage() {
             }
             updateUser(data.user || { timezone: tz });
             setTimezoneSuccess('Timezone synchronized');
+            // Reload the page to apply the new timezone
+            window.location.reload();
         } catch (err) {
             setDisplayTimezone(previous);
             setTimezoneError(err.message || 'Failed to update timezone');

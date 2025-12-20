@@ -1,6 +1,7 @@
 import { Event } from '../models/Event';
 import { fetchEconomicEvents } from './calendar';
 import { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGroqRateLimited } from './groq';
+import { runVolatilityEngine } from './volatilityEngine';
 import { fetchNewsForEvent } from './news';
 import { broadcastEventUpdate } from './websocket';
 import { debugConsole } from '../utils/debugConsole';
@@ -98,6 +99,38 @@ async function performCalendarSync(days = 3) {
         } else {
           console.warn(`[Calendar Sync] AI analysis failed for ${externalEvent.title}`);
           debugConsole.error('CalendarSync', `AI analysis failed for ${externalEvent.title}`, err);
+        }
+      }
+    }
+
+    // Volatility analysis (structured engine)
+    if (!groqLimited && !isGroqRateLimited()) {
+      try {
+        const regime = process.env.CURRENT_MARKET_REGIME as any;
+        const vol = await runVolatilityEngine(externalEvent, regime);
+
+        await Event.updateOne({ eventId: externalEvent.eventId }, {
+          $set: {
+            volatilityScore: vol.volatilityScore,
+            volatilityWindow: vol.volatilityWindow,
+            expectedPipRange: vol.expectedPipRange,
+            pipRange: vol.pipRange,
+            pipRangeComputedAt: vol.pipRange?.computedAt || new Date(),
+            directionalBias: vol.directionalBias,
+            confidenceScore: vol.confidenceScore,
+            drivers: vol.drivers,
+            executionNotes: vol.executionNotes,
+            currentRegime: regime,
+          }
+        });
+        debugConsole.debug('CalendarSync', `Volatility analysis updated for ${externalEvent.title}`);
+      } catch (err) {
+        if ((err as any)?.code === 'GROQ_RATE_LIMIT') {
+          groqLimited = true;
+          console.warn('[Calendar Sync] Groq rate limit reached; skipping volatility this run');
+        } else {
+          console.warn(`[Calendar Sync] Volatility engine failed for ${externalEvent.title}`);
+          debugConsole.error('CalendarSync', `Volatility engine failed for ${externalEvent.title}`, err);
         }
       }
     }

@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia';
 import { Event } from '../models/Event';
 import { fetchEconomicEvents, getTodayEvents, getUpcomingHighImpactEvents } from '../services/calendar';
 import { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGroqRateLimited } from '../services/groq';
+import { runVolatilityEngine } from '../services/volatilityEngine';
 import { broadcastEventUpdate } from '../services/websocket';
 import { ApiError } from '../utils/errors';
 import { fetchNewsForEvent } from '../services/news';
@@ -276,6 +277,29 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
             );
 
             analyzedCount++;
+
+            // Run structured volatility engine (memory + regime adjustments)
+            try {
+              const regime = process.env.CURRENT_MARKET_REGIME as any; // optional global regime
+              const vol = await runVolatilityEngine(externalEvent, regime);
+
+              await Event.updateOne({ eventId: externalEvent.eventId }, {
+                $set: {
+                  volatilityScore: vol.volatilityScore,
+                  volatilityWindow: vol.volatilityWindow,
+                  expectedPipRange: vol.expectedPipRange,
+                  pipRange: vol.pipRange,
+                  pipRangeComputedAt: vol.pipRange?.computedAt || new Date(),
+                  directionalBias: vol.directionalBias,
+                  confidenceScore: vol.confidenceScore,
+                  drivers: vol.drivers,
+                  executionNotes: vol.executionNotes,
+                  currentRegime: regime,
+                }
+              });
+            } catch (volErr) {
+              console.warn(`Volatility engine failed for ${externalEvent.title}`);
+            }
           } catch (aiError) {
             console.warn(`AI analysis failed for ${externalEvent.title}`);
           }
@@ -369,6 +393,48 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
         message: 'Calendar sync failed',
         data: error.message,
       };
+    }
+  })
+
+  // Trigger volatility analysis for a single event
+  .post('/:eventId/analyze-volatility', async ({ params, body }) => {
+    try {
+      const { eventId } = params;
+      const regime = (body && (body.regime as string)) || process.env.CURRENT_MARKET_REGIME;
+
+      let event = await Event.findOne({ eventId }).lean();
+      if (!event && Event.db?.base?.Types?.ObjectId?.isValid?.(eventId)) {
+        event = await Event.findById(eventId).lean();
+      }
+
+      if (!event) {
+        return { statusCode: 404, success: false, message: 'Event not found', data: null };
+      }
+
+      const vol = await runVolatilityEngine(event, regime as any);
+
+      await Event.updateOne({ eventId: event.eventId }, {
+        $set: {
+          volatilityScore: vol.volatilityScore,
+          volatilityWindow: vol.volatilityWindow,
+          expectedPipRange: vol.expectedPipRange,
+          pipRange: vol.pipRange,
+          pipRangeComputedAt: vol.pipRange?.computedAt || new Date(),
+          directionalBias: vol.directionalBias,
+          confidenceScore: vol.confidenceScore,
+          drivers: vol.drivers,
+          executionNotes: vol.executionNotes,
+          currentRegime: regime,
+        }
+      });
+
+      // broadcast update to websocket clients
+      broadcastEventUpdate(vol, 'volatility_update');
+
+      return { statusCode: 200, success: true, message: 'Volatility analysis complete', data: vol };
+    } catch (error: any) {
+      console.error('Volatility analysis failed:', error);
+      return { statusCode: 500, success: false, message: 'Volatility analysis failed', data: error.message };
     }
   })
 

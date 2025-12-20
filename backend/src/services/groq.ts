@@ -1,4 +1,5 @@
 import Groq from 'groq-sdk';
+import { Event } from '../models/Event';
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
@@ -12,6 +13,34 @@ async function sleep(ms: number) {
 
 export function isGroqRateLimited(): boolean {
   return groqRateLimitedUntil !== null && groqRateLimitedUntil > Date.now();
+}
+
+/**
+ * Get relevant past events for memory context
+ */
+async function getPastEventsContext(currency: string, limit = 2): Promise<string> {
+  try {
+    const pastEvents = await Event.find({
+      currency,
+      aiAnalyzedAt: { $exists: true },
+      eventDateTime: { $lt: new Date() }
+    })
+    .sort({ eventDateTime: -1 })
+    .limit(limit)
+    .select('eventName aiReasoning tradingRecommendation volatilityPrediction realizedPipMove')
+    .lean();
+
+    if (pastEvents.length === 0) return '';
+
+    const context = pastEvents.map(event =>
+      `${event.eventName}: ${event.volatilityPrediction} volatility, ${event.realizedPipMove ? event.realizedPipMove + ' pips' : ''}`
+    ).join('; ');
+
+    return pastEvents.length ? `\nHistorical: ${context}` : '';
+  } catch (error) {
+    console.warn('Failed to fetch past events context:', error);
+    return '';
+  }
 }
 
 async function groqChatWithRetry(
@@ -78,54 +107,46 @@ export interface InDepthAnalysisInput extends EventRelevanceInput {
 }
 
 /**
- * Analyze economic event relevance and predict volatility using Groq AI
+ * Analyze economic event relevance and predict volatility using Groq GPT with memory
  */
 export async function analyzeEventRelevance(
   event: EventRelevanceInput
 ): Promise<EventRelevanceScore> {
   try {
-    const prompt = `You are an expert forex and indices trading analyst. Analyze this economic event and provide:
-1. Relevance score (0-100) for forex/indices traders
-2. Volatility prediction (Low/Medium/High/Extreme)
-3. Brief reasoning (max 100 words)
-4. Trading recommendation (max 50 words)
+    const pastEventsContext = await getPastEventsContext(event.currency);
 
-Event Details:
-- Title: ${event.title}
-- Description: ${event.description || 'N/A'}
-- Currency: ${event.currency}
-- Impact Level: ${event.impact}
-- Previous: ${event.previous || 'N/A'}
-- Forecast: ${event.forecast || 'N/A'}
-- Actual: ${event.actual || 'N/A'}
-
-Respond in this exact JSON format:
+    const prompt = `Analyze this economic event for forex traders. Output JSON only:
 {
-  "relevanceScore": <number 0-100>,
-  "volatilityPrediction": "<Low|Medium|High|Extreme>",
-  "reasoning": "<brief explanation>",
-  "tradingRecommendation": "<actionable advice>"
-}`;
+  "relevanceScore": 0-100,
+  "volatilityPrediction": "Low|Medium|High|Extreme",
+  "reasoning": "brief explanation",
+  "tradingRecommendation": "actionable advice"
+}
+
+Event: ${event.title} (${event.impact} impact, ${event.currency})
+Previous: ${event.previous || 'N/A'} | Forecast: ${event.forecast || 'N/A'} | Actual: ${event.actual || 'N/A'}
+${event.description ? `Description: ${event.description.slice(0, 150)}` : ''}
+${pastEventsContext}`;
 
     const completion = await groqChatWithRetry({
       messages: [
         {
           role: 'system',
-          content: 'You are a professional forex and indices trading analyst. Always respond with valid JSON only.',
+          content: 'You are a professional forex and indices trading analyst with deep knowledge of historical market reactions. Always respond with valid JSON only.',
         },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       temperature: 0.3,
       max_tokens: 500,
       response_format: { type: 'json_object' },
     });
 
     const response = completion.choices[0]?.message?.content;
-    
+
     if (!response) {
       throw new Error('No response from Groq AI');
     }
@@ -143,9 +164,71 @@ Respond in this exact JSON format:
     return parsed;
   } catch (error: any) {
     console.error('Groq AI analysis failed:', error.message);
-    
+
     // Fallback to rule-based scoring
     return generateFallbackScore(event);
+  }
+}
+
+/**
+ * Infer detailed volatility fields from Groq GPT with memory (volatilityScore 1-5, window, drivers, bias, executionNotes)
+ */
+export interface GroqVolatilityOutput {
+  volatilityScore: number; // 1-5
+  volatilityWindow: 'Pre-Event' | 'At-Release' | 'Post-Release' | 'Extended';
+  drivers: string[];
+  directionalBias: 'Bullish' | 'Bearish' | 'Neutral' | 'Two-Way';
+  executionNotes: string;
+}
+
+export async function inferVolatility(event: EventRelevanceInput): Promise<GroqVolatilityOutput> {
+  try {
+    const pastEventsContext = await getPastEventsContext(event.currency, 3); // Limit to 3 events
+
+    const prompt = `Output JSON for volatility analysis:
+{"volatilityScore":1-5,"volatilityWindow":"Pre-Event|At-Release|Post-Release|Extended","drivers":["reason"],"directionalBias":"Bullish|Bearish|Neutral|Two-Way","executionNotes":"action"}
+
+Event: ${event.title} (${event.impact}, ${event.currency})
+Prev: ${event.previous || 'N/A'} | Fcst: ${event.forecast || 'N/A'}
+${event.description ? event.description.slice(0, 100) : ''}
+${pastEventsContext}`;
+
+    const completion = await groqChatWithRetry({
+      messages: [
+        { role: 'system', content: 'You are a macro volatility analyst with historical context. Output JSON only.' },
+        { role: 'user', content: prompt },
+      ],
+      model: 'openai/gpt-oss-120b',
+      temperature: 0.2,
+      max_tokens: 400,
+      response_format: { type: 'json_object' },
+    });
+
+    const response = completion.choices[0]?.message?.content;
+    if (!response) throw new Error('No response from Groq AI');
+    const parsed = JSON.parse(response) as GroqVolatilityOutput;
+
+    // Basic validation
+    if (typeof parsed.volatilityScore !== 'number' || parsed.volatilityScore < 1 || parsed.volatilityScore > 5) {
+      throw new Error('Invalid volatilityScore');
+    }
+
+    return parsed;
+  } catch (err) {
+    console.warn('Groq AI volatility inference failed, falling back to rule-based mapping', err?.message || err);
+
+    // Fallback: map textual volatilityPrediction to numeric
+    const fallback = await analyzeEventRelevance(event);
+    const mapping: any = { Low: 1, Medium: 3, High: 4, Extreme: 5 };
+    const score = mapping[fallback.volatilityPrediction] || 3;
+
+    return {
+      volatilityScore: score,
+      volatilityWindow: 'At-Release',
+      drivers: [fallback.reasoning || 'Rule-based fallback'],
+      directionalBias: 'Two-Way',
+      executionNotes: fallback.tradingRecommendation || 'Monitor event',
+    };
   }
 }
 
@@ -156,7 +239,7 @@ export async function summarizeTextShort(content: string, title?: string): Promi
   const safeContent = content?.trim() || '';
   if (!safeContent) return { summary: '' };
 
-  const prompt = `Summarize the following market/economic news in 2-4 sentences (60-90 words). Keep it crisp, trader-focused, and avoid fluff.
+  const prompt = `Summarize the following market/economic news in 2-4 sentences (60-90 words). Include specific trading measures/recommendations for traders. Keep it crisp, trader-focused, and actionable.
 Title: ${title || 'N/A'}
 Content: ${safeContent}`;
 
@@ -169,7 +252,7 @@ Content: ${safeContent}`;
         },
         { role: 'user', content: prompt },
       ],
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       temperature: 0.4,
       max_tokens: 220,
     });
@@ -177,7 +260,7 @@ Content: ${safeContent}`;
     const summary = completion.choices[0]?.message?.content?.trim() || '';
     return { summary };
   } catch (error) {
-    console.error('Groq summarization failed:', (error as any)?.message || error);
+    console.error('Groq AI summarization failed:', (error as any)?.message || error);
     return { summary: safeContent.slice(0, 400) };
   }
 }
@@ -186,38 +269,35 @@ Content: ${safeContent}`;
  * Generate a medium-length in-depth analysis with historical color (120-180 words)
  */
 export async function generateInDepthAnalysis(event: InDepthAnalysisInput): Promise<string> {
+  const pastEventsContext = await getPastEventsContext(event.currency);
+
   const contentBlock = [event.description, event.newsSummary].filter(Boolean).join('\n');
-  const prompt = `You are a senior FX strategist. Write a medium-length (120-180 words) in-depth analysis for traders.
-Keep it factual, actionable, and avoid long-winded prose. Include:
-- What happened and why the market moved.
-- Any notable surprises vs. forecast.
-- How this typically impacts ${event.currency} given historical reactions.
-- A balanced take (bullish/bearish drivers) without being absolute or adding disclaimers like "Treat this as context, not a certainty."
+  const prompt = `Write a concise analysis (70-80 words) for traders:
+- What happened and market reaction
+- Surprises vs. forecast  
+- Historical impact on ${event.currency}
+- Balanced outlook
 
-Event
-- Title: ${event.title}
-- Impact: ${event.impact}
-- Currency: ${event.currency}
-- Previous: ${event.previous || 'N/A'} | Forecast: ${event.forecast || 'N/A'} | Actual: ${event.actual || 'N/A'}
-- News headline: ${event.newsHeadline || 'N/A'}
-- Notes: ${contentBlock || 'N/A'}
-
-Respond with one paragraph.`;
+Event: ${event.title} (${event.impact} impact)
+Previous: ${event.previous || 'N/A'} | Forecast: ${event.forecast || 'N/A'} | Actual: ${event.actual || 'N/A'}
+News: ${event.newsHeadline || 'N/A'}
+Notes: ${contentBlock ? contentBlock.slice(0, 200) : 'N/A'}
+${pastEventsContext}`;
 
   try {
     const completion = await groqChatWithRetry({
       messages: [
-        { role: 'system', content: 'You are a concise macro analyst for FX/indices. Keep to 120-180 words.' },
+        { role: 'system', content: 'You are a concise macro analyst for FX/indices. Keep to 70-80 words.' },
         { role: 'user', content: prompt },
       ],
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       temperature: 0.35,
-      max_tokens: 360,
+      max_tokens: 200,
     });
 
     return completion.choices[0]?.message?.content?.trim() || '';
   } catch (error) {
-    console.error('Groq in-depth analysis failed:', (error as any)?.message || error);
+    console.error('Groq AI in-depth analysis failed:', (error as any)?.message || error);
     return '';
   }
 }
@@ -225,7 +305,7 @@ Respond with one paragraph.`;
 /**
  * Batch analyze multiple events efficiently
  */
- 
+
 export async function batchAnalyzeEvents(
   events: EventRelevanceInput[]
 ): Promise<Map<string, EventRelevanceScore>> {
@@ -235,7 +315,7 @@ export async function batchAnalyzeEvents(
   const batchSize = 5;
   for (let i = 0; i < events.length; i += batchSize) {
     const batch = events.slice(i, i + batchSize);
-    const promises = batch.map((event) => 
+    const promises = batch.map((event) =>
       analyzeEventRelevance(event)
         .then(score => ({ event: event.title, score }))
         .catch(err => {
@@ -297,7 +377,7 @@ export async function checkGroqHealth(): Promise<boolean> {
   try {
     const completion = await groqChatWithRetry({
       messages: [{ role: 'user', content: 'ping' }],
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       max_tokens: 5,
     });
     return !!completion.choices[0];
