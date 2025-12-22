@@ -7,6 +7,116 @@ import SubscriptionBadge from '@/components/ui/subscription-badge.jsx';
 import CancelSubscriptionDialog from '@/components/subscription/CancelSubscriptionDialog.jsx';
 import { Calendar, LogOut, Clock3, ChevronLeft, ChevronRight, AlertCircle, Filter, Menu, X, User, Settings, TrendingUp } from 'lucide-react';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card.jsx';
+import * as tz from '@date-fns/tz';
+import { startOfDay, addYears, subDays } from 'date-fns';
+
+// Safe wrapper around @date-fns/tz to handle packaging/bundler discrepancies
+const tzApi = (() => {
+	if (typeof tz?.utcToZonedTime === 'function' && typeof tz?.zonedTimeToUtc === 'function') return tz;
+	if (typeof tz?.default === 'object' && typeof tz.default?.utcToZonedTime === 'function') return tz.default;
+	try {
+		// Fallback: expose keys for debugging in dev
+		if (import.meta.env.DEV) console.debug('TZ_MODULE_KEYS', Object.keys(tz), Object.keys(tz?.default || {}));
+	} catch (e) {}
+	return tz;
+})();
+
+const utcToZonedTimeSafe = (...args) => {
+	if (typeof tzApi.utcToZonedTime === 'function') return tzApi.utcToZonedTime(...args);
+	// fallback to building via Intl + tzOffset
+	const [date, tzName] = args;
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: tzName,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false
+	}).formatToParts(new Date(date));
+	const toNum = (type) => Number(parts.find(p => p.type === type).value);
+	const y = toNum('year');
+	const m = toNum('month');
+	const d = toNum('day');
+	const h = toNum('hour');
+	const min = toNum('minute');
+	const s = toNum('second');
+	// compute offset at noon UTC to avoid edge cases
+	const noonUtc = Date.UTC(y, m - 1, d, 12);
+	const offset = (typeof tzApi.tzOffset === 'function') ? tzApi.tzOffset(tzName, new Date(noonUtc)) : 0;
+	const utc = Date.UTC(y, m - 1, d, h, min, s) - offset * 60_000;
+	return new Date(utc);
+};
+const zonedTimeToUtcSafe = (...args) => {
+	if (typeof tzApi.zonedTimeToUtc === 'function') return tzApi.zonedTimeToUtc(...args);
+	// args: (dateLike, tzName)
+	const [dateLike, tzName] = args;
+	const d = new Date(dateLike);
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: tzName,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false
+	}).formatToParts(d);
+	const toNum = (type) => Number(parts.find(p => p.type === type).value);
+	const y = toNum('year');
+	const m = toNum('month');
+	const dd = toNum('day');
+	const h = toNum('hour');
+	const min = toNum('minute');
+	const s = toNum('second');
+	const noonUtc = Date.UTC(y, m - 1, dd, 12);
+	const offset = (typeof tzApi.tzOffset === 'function') ? tzApi.tzOffset(tzName, new Date(noonUtc)) : 0;
+	const utc = Date.UTC(y, m - 1, dd, h, min, s) - offset * 60_000;
+	return new Date(utc);
+};
+
+// Helpers: start of day in timezone (returns UTC instant as Date)
+const startOfDayInTZ = (date, tzName) => {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: tzName,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false
+	}).formatToParts(new Date(date));
+	const toNum = (type) => Number(parts.find(p => p.type === type).value);
+	const y = toNum('year');
+	const m = toNum('month');
+	const d = toNum('day');
+	const noonUtc = Date.UTC(y, m - 1, d, 12);
+	const offset = (typeof tzApi.tzOffset === 'function') ? tzApi.tzOffset(tzName, new Date(noonUtc)) : 0;
+	const utc = Date.UTC(y, m - 1, d, 0, 0, 0) - offset * 60_000;
+	return new Date(utc);
+};
+const addYearsStartOfDayInTZ = (date, tzName, years) => {
+	const parts = new Intl.DateTimeFormat('en-US', {
+		timeZone: tzName,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false
+	}).formatToParts(new Date(date));
+	const toNum = (type) => Number(parts.find(p => p.type === type).value);
+	const y = toNum('year') + years;
+	const m = toNum('month');
+	const d = toNum('day');
+	const noonUtc = Date.UTC(y, m - 1, d, 12);
+	const offset = (typeof tzApi.tzOffset === 'function') ? tzApi.tzOffset(tzName, new Date(noonUtc)) : 0;
+	const utc = Date.UTC(y, m - 1, d, 0, 0, 0) - offset * 60_000;
+	return new Date(utc);
+};
 
 const TIMEZONES = [
 	{ value: 'America/New_York', label: 'Eastern Time (ET)' },
@@ -88,12 +198,10 @@ export default function Dashboard() {
 				setLoadingEvents(true);
 				setEventsError('');
 
-				const startDate = new Date();
-				startDate.setHours(0, 0, 0, 0);
-				startDate.setDate(startDate.getDate() - 30); // Include past 30 days
-				const endDate = new Date(startDate);
-				endDate.setFullYear(endDate.getFullYear() + 1);
-
+				// Build date range aligned to the selected display timezone
+			const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
+			const startDate = new Date(startOfTodayUtc.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days before
+			const endDate = addYearsStartOfDayInTZ(new Date(), displayTimezone, 1); // one year from today (start of day)
 				const params = new URLSearchParams({
 					startDate: startDate.toISOString(),
 					endDate: endDate.toISOString(),
@@ -131,7 +239,7 @@ export default function Dashboard() {
 		};
 
 		fetchEvents();
-	}, [API_URL]);
+	}, [API_URL, displayTimezone]);
 
 	useEffect(() => {
 		setDisplayTimezone(user?.timezone || fallbackTz);
@@ -248,6 +356,24 @@ export default function Dashboard() {
 		return buckets;
 	}, [todayEvents, selectedImpact, selectedCurrency, selectedCountry]);
 
+	const debugInfo = useMemo(() => {
+		try {
+			const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
+			const startDateUtc = new Date(startOfTodayUtc.getTime() - 30 * 24 * 60 * 60 * 1000);
+			const endDateUtc = addYearsStartOfDayInTZ(new Date(), displayTimezone, 1);
+			const out = {
+				startDateUtc: startDateUtc.toISOString(),
+				endDateUtc: endDateUtc.toISOString(),
+				dayKeys: Object.keys(dayBuckets).slice(0, 8),
+				selectedDate,
+			};
+			console.debug('DEBUG_CALENDAR', displayTimezone, out.startDateUtc, out.endDateUtc, out.dayKeys, out.selectedDate);
+			return out;
+		} catch (e) {
+			return {};
+		}
+	}, [displayTimezone, dayBuckets, selectedDate]);
+
 	const dayColor = (key) => {
 		const bucket = dayBuckets[key];
 		if (!bucket) return 'bg-gray-50 text-gray-400';
@@ -333,23 +459,35 @@ export default function Dashboard() {
 	const [bannerDismissed, setBannerDismissed] = useState(() => {
 		try { return localStorage.getItem('upgradeBannerDismissed') === '1'; } catch (e) { return false; }
 	});
-	const currentMonth = useMemo(() => {
-		const d = new Date();
-		d.setMonth(d.getMonth() + monthOffset);
+	// Zoned current month (aligned to display timezone) and month label
+	const zonedCurrentMonth = useMemo(() => {
+		const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
+		const d = new Date(startOfTodayUtc);
+		d.setUTCMonth(d.getUTCMonth() + monthOffset);
 		return d;
-	}, [monthOffset]);
+	}, [monthOffset, displayTimezone]);
 
-	const monthLabel = currentMonth.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+	const monthLabel = zonedCurrentMonth.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: displayTimezone });
 
 	const daysInMonth = useMemo(() => {
-		const start = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-		const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-		const startDay = start.getDay();
+		const year = zonedCurrentMonth.getUTCFullYear();
+		const month = zonedCurrentMonth.getUTCMonth();
+
+		// Determine the weekday index of the 1st of the month in the selected timezone.
+		// Use noon UTC to avoid DST/offset edge cases when converting between zones.
+		const firstOfMonthUtcNoon = new Date(Date.UTC(year, month, 1, 12));
+		const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: displayTimezone, weekday: 'short' }).format(firstOfMonthUtcNoon);
+		const startDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayStr);
+
+		// Number of days in month (UTC-based is fine)
+		const lastDayUtc = new Date(Date.UTC(year, month + 1, 0));
+		const daysCount = lastDayUtc.getUTCDate();
+
 		const days = [];
 		for (let i = 0; i < startDay; i++) days.push(null);
-		for (let d = 1; d <= end.getDate(); d++) days.push(d);
+		for (let d = 1; d <= daysCount; d++) days.push(d);
 		return days;
-	}, [currentMonth]);
+	}, [zonedCurrentMonth, displayTimezone]);
 
 	const isDaySelected = (key) => selectedDate === key;
 
@@ -448,7 +586,7 @@ export default function Dashboard() {
 		fetchCurrencies();
 		fetchCountries();
 		fetchEvents();
-	}, [selectedCurrency, selectedImpact, selectedCountry, minRelevance]);
+	}, [selectedCurrency, selectedImpact, selectedCountry, minRelevance, displayTimezone]);
 
 	const fetchCurrencies = async () => {
 		try {
@@ -488,14 +626,15 @@ export default function Dashboard() {
 
 			const params = new URLSearchParams();
 
-			// Date range: from today midnight for next year
-			const startDate = new Date();
-			startDate.setHours(0, 0, 0, 0);
-			const endDate = new Date(startDate);
-			endDate.setFullYear(endDate.getFullYear() + 1);
+			// Date range aligned to the selected display timezone
+		const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
+		const zonedStart = new Date(startOfTodayUtc.getTime() - 0 * 24 * 60 * 60 * 1000);
+		const zonedEnd = addYearsStartOfDayInTZ(new Date(), displayTimezone, 1);
 
-			params.append('startDate', startDate.toISOString());
-			params.append('endDate', endDate.toISOString());
+		const startDateUtc = zonedStart;
+		const endDateUtc = zonedEnd;
+			params.append('startDate', startDateUtc.toISOString());
+			params.append('endDate', endDateUtc.toISOString());
 			params.append('limit', eventsLimit.toString());
 			params.append('offset', (loadMore ? eventsOffset : 0).toString());
 
@@ -1238,7 +1377,7 @@ export default function Dashboard() {
 								<div className="grid grid-cols-7 gap-1 sm:gap-2 text-center">
 									{daysInMonth.map((day, idx) => {
 										if (!day) return <div key={idx} className="h-8 sm:h-9" />;
-										const dateKey = formatDateKey(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day));
+										const dateKey = formatDateKey(new Date(Date.UTC(zonedCurrentMonth.getUTCFullYear(), zonedCurrentMonth.getUTCMonth(), day, 12)));
 										const hasEvents = !!dayBuckets[dateKey];
 										const colorClass = dayColor(dateKey);
 										const selected = isDaySelected(dateKey);
