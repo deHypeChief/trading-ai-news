@@ -396,6 +396,282 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
     }
   })
 
+  // Generate historical data over a month range and run AI analysis (admin)
+  .post('/generate-range', async ({ body }) => {
+    try {
+      const { startMonth, months = 1, startDate: sd, endDate: ed, force = false } = body as any;
+
+      let start: Date;
+      let end: Date;
+
+      if (startMonth) {
+        const parts = startMonth.split('-').map((p: string) => parseInt(p, 10));
+        if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) {
+          return { statusCode: 400, success: false, message: 'Invalid startMonth format. Use YYYY-MM', data: null };
+        }
+        start = new Date(parts[0], parts[1] - 1, 1);
+        end = new Date(start);
+        end.setMonth(end.getMonth() + Math.max(1, parseInt(`${months}`, 10)));
+        end.setDate(end.getDate() - 1);
+        end.setHours(23, 59, 59, 999);
+      } else if (sd && ed) {
+        start = new Date(sd);
+        end = new Date(ed);
+      } else {
+        return { statusCode: 400, success: false, message: 'Provide startMonth+months or startDate+endDate', data: null };
+      }
+
+      console.log(`📅 Generating calendar data from ${start.toISOString()} to ${end.toISOString()} (force=${!!force})`);
+
+      const externalEventsRaw = await fetchEconomicEvents(start, end);
+
+      // Deduplicate by eventId to avoid repeating the same external events
+      const uniqueEventsMap = new Map<string, any>();
+      for (const e of externalEventsRaw) {
+        uniqueEventsMap.set(e.eventId, e);
+      }
+      const externalEvents = Array.from(uniqueEventsMap.values()).sort((a: any, b: any) => a.date.getTime() - b.date.getTime());
+
+      let syncedCount = 0;
+      let skippedCount = 0;
+      let analyzedCount = 0;
+      let summarizedCount = 0;
+      let indepthCount = 0;
+
+      for (const externalEvent of externalEvents) {
+        // Skip existing event unless force is true
+        if (!force) {
+          const exists = await Event.findOne({ eventId: externalEvent.eventId }).lean();
+          if (exists) {
+            skippedCount++;
+            continue;
+          }
+        }
+
+        // Upsert event
+        const event = await Event.findOneAndUpdate(
+          { eventId: externalEvent.eventId },
+          {
+            $set: {
+              eventName: externalEvent.title,
+              country: externalEvent.country,
+              currency: externalEvent.currency,
+              eventDateTime: externalEvent.date,
+              impact: externalEvent.impact,
+              forecast: externalEvent.forecast,
+              previous: externalEvent.previous,
+              actual: externalEvent.actual,
+              description: externalEvent.description,
+              source: externalEvent.source,
+            },
+          },
+          { upsert: true, new: true }
+        );
+
+        syncedCount++;
+        broadcastEventUpdate(event, 'update');
+
+        // AI analysis if not rate limited
+        if (!isGroqRateLimited()) {
+          try {
+            const aiAnalysis = await analyzeEventRelevance({
+              title: externalEvent.title,
+              description: externalEvent.description,
+              currency: externalEvent.currency,
+              impact: externalEvent.impact,
+              previous: externalEvent.previous,
+              forecast: externalEvent.forecast,
+              actual: externalEvent.actual,
+            });
+
+            await Event.updateOne(
+              { eventId: externalEvent.eventId },
+              {
+                $set: {
+                  aiRelevanceScore: aiAnalysis.relevanceScore,
+                  volatilityPrediction: aiAnalysis.volatilityPrediction,
+                  aiReasoning: aiAnalysis.reasoning,
+                  tradingRecommendation: aiAnalysis.tradingRecommendation,
+                  aiAnalyzedAt: new Date(),
+                },
+              }
+            );
+
+            analyzedCount++;
+
+            // Volatility engine
+            try {
+              const regime = process.env.CURRENT_MARKET_REGIME as any;
+              const vol = await runVolatilityEngine(externalEvent, regime);
+
+              await Event.updateOne({ eventId: externalEvent.eventId }, {
+                $set: {
+                  volatilityScore: vol.volatilityScore,
+                  volatilityWindow: vol.volatilityWindow,
+                  expectedPipRange: vol.expectedPipRange,
+                  pipRange: vol.pipRange,
+                  pipRangeComputedAt: vol.pipRange?.computedAt || new Date(),
+                  directionalBias: vol.directionalBias,
+                  confidenceScore: vol.confidenceScore,
+                  drivers: vol.drivers,
+                  executionNotes: vol.executionNotes,
+                  currentRegime: regime,
+                }
+              });
+            } catch (volErr) {
+              console.warn(`Volatility engine failed for ${externalEvent.title}`);
+            }
+          } catch (aiError) {
+            console.warn(`AI analysis failed for ${externalEvent.title}`);
+          }
+        } else {
+          console.warn('Groq rate limit active; skipping AI analysis for this event');
+        }
+
+        // News + summary
+        let shortSummary = '';
+        if (isGroqRateLimited()) {
+          console.warn('Groq rate limit active; skipping AI summary this run');
+        } else {
+          try {
+            const news = await fetchNewsForEvent(externalEvent.title, externalEvent.currency, externalEvent.date);
+            if (news) {
+              const summary = await summarizeTextShort(news.summaryHint || news.headline || externalEvent.description || '', news.headline);
+              shortSummary = summary.summary;
+              await Event.updateOne(
+                { eventId: externalEvent.eventId },
+                {
+                  $set: {
+                    aiSummary: summary.summary,
+                    newsHeadline: news.headline,
+                    newsUrl: news.url,
+                    newsSource: news.source,
+                    newsPublishedAt: news.publishedAt ? new Date(news.publishedAt) : undefined,
+                    newsFetchedAt: new Date(),
+                  },
+                }
+              );
+              summarizedCount++;
+            } else if (externalEvent.description) {
+              const summary = await summarizeTextShort(externalEvent.description, externalEvent.title);
+              shortSummary = summary.summary;
+              await Event.updateOne({ eventId: externalEvent.eventId }, { $set: { aiSummary: summary.summary } });
+              summarizedCount++;
+            }
+          } catch (err) {
+            console.warn(`News fetch/summarize failed for ${externalEvent.title}`);
+          }
+        }
+
+        // In-depth analysis
+        if (isGroqRateLimited()) {
+          console.warn('Groq rate limit active; skipping AI in-depth analysis this run');
+        } else {
+          try {
+            const indepth = await generateInDepthAnalysis({
+              title: externalEvent.title,
+              description: externalEvent.description,
+              currency: externalEvent.currency,
+              impact: externalEvent.impact,
+              previous: externalEvent.previous,
+              forecast: externalEvent.forecast,
+              actual: externalEvent.actual,
+              newsHeadline: undefined,
+              newsSummary: shortSummary,
+            });
+
+            if (indepth) {
+              await Event.updateOne({ eventId: externalEvent.eventId }, { $set: { aiInDepthAnalysis: indepth } });
+              indepthCount++;
+            }
+          } catch (err) {
+            console.warn(`In-depth analysis failed for ${externalEvent.title}`);
+          }
+        }
+      }
+
+      return {
+        statusCode: 200,
+        success: true,
+        message: 'Generation completed',
+        data: {
+          syncedCount,
+          skippedCount,
+          analyzedCount,
+          summarizedCount,
+          indepthCount,
+          totalFetched: externalEvents.length,
+          dateRange: { start, end },
+        },
+      };
+    } catch (error: any) {
+      console.error('Generation failed:', error);
+      return { statusCode: 500, success: false, message: 'Generation failed', data: error.message };
+    }
+  })
+
+  // Backfill control endpoints (admin)
+  .get('/backfill/status', async ({ set }) => {
+    try {
+      const { getRedisClient } = await import('../config/redis');
+      const redis = getRedisClient();
+      const key = process.env.CALENDAR_BACKFILL_REDIS_KEY || 'calendar:backfill:cursor';
+      const v = redis ? await redis.get(key) : null;
+      return { statusCode: 200, success: true, message: 'Backfill status', data: { enabled: process.env.CALENDAR_BACKFILL_ENABLED === 'true', cursor: v || null, startDate: process.env.CALENDAR_BACKFILL_START_DATE || '2025-12-08' } };
+    } catch (err: any) {
+      console.error('Backfill status failed:', err);
+      set.status = 500;
+      return { statusCode: 500, success: false, message: 'Failed to get backfill status', data: err.message };
+    }
+  })
+
+  .post('/backfill/run-now', async ({ body, set }) => {
+    try {
+      const { days, force } = body as { days?: number; force?: boolean };
+      const run = await import('../services/calendarSync');
+      const result = await run.performBackfillRun(days || undefined, { force: !!force });
+      return { statusCode: 200, success: true, message: 'Backfill run completed', data: result };
+    } catch (err: any) {
+      console.error('Backfill run failed:', err);
+      set.status = 500;
+      return { statusCode: 500, success: false, message: 'Backfill run failed', data: err.message };
+    }
+  })
+
+  .post('/backfill/reset', async ({ body, set }) => {
+    try {
+      const { cursorDate } = body as { cursorDate?: string };
+      const { getRedisClient } = await import('../config/redis');
+      const redis = getRedisClient();
+      const key = process.env.CALENDAR_BACKFILL_REDIS_KEY || 'calendar:backfill:cursor';
+
+      const d = cursorDate ? new Date(cursorDate) : new Date(process.env.CALENDAR_BACKFILL_START_DATE || '2025-12-08');
+      if (redis) await redis.set(key, d.toISOString());
+
+      return { statusCode: 200, success: true, message: 'Backfill cursor reset', data: { cursor: d.toISOString() } };
+    } catch (err: any) {
+      console.error('Backfill reset failed:', err);
+      set.status = 500;
+      return { statusCode: 500, success: false, message: 'Backfill reset failed', data: err.message };
+    }
+  })
+
+  .get('/backfill/last-run', async ({ set }) => {
+    try {
+      const { getRedisClient } = await import('../config/redis');
+      const redis = getRedisClient();
+      const key = process.env.CALENDAR_BACKFILL_LAST_RUN_REDIS_KEY || 'calendar:backfill:last_run';
+      if (!redis) return { statusCode: 200, success: true, message: 'Last backfill run', data: null };
+      const v = await redis.get(key);
+      const parsed = v ? JSON.parse(v) : null;
+      return { statusCode: 200, success: true, message: 'Last backfill run', data: parsed };
+    } catch (err: any) {
+      console.error('Failed to fetch last backfill run:', err);
+      set.status = 500;
+      return { statusCode: 500, success: false, message: 'Failed to fetch last backfill run', data: err.message };
+    }
+  })
+
   // Trigger volatility analysis for a single event
   .post('/:eventId/analyze-volatility', async ({ params, body }) => {
     try {

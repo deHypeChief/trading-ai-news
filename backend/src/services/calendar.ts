@@ -56,7 +56,7 @@ async function fetchFromTradingEconomics(
       source: 'TradingEconomics' as const,
     }));
   } catch (error: any) {
-    console.error('Trading Economics API error:', error.message);
+    console.warn('Trading Economics API error:', error.message);
     throw error;
   }
 }
@@ -89,7 +89,7 @@ async function fetchFromForexFactory(url: string): Promise<EconomicEvent[]> {
       source: 'ForexFactory' as const,
     }));
   } catch (error: any) {
-    console.error('Forex Factory API error:', error.message);
+    console.warn('Forex Factory API error:', error.message);
     throw error;
   }
 }
@@ -126,10 +126,47 @@ async function fetchForexFactoryWithFallbacks(): Promise<EconomicEvent[]> {
 
   for (const url of urls) {
     try {
-      return await fetchFromForexFactory(url);
+      // Retry fetchFromForexFactory on transient rate-limit errors
+      const events = await withRetry(() => fetchFromForexFactory(url), 'ForexFactory', 4, 5000);
+      return events;
     } catch (err: any) {
       lastError = err;
-      console.warn(`[ForexFactory] failed from ${url}: ${err?.message || err}`);
+      const status = err?.response?.status;
+      const msg = status ? `status ${status}` : err?.message || String(err);
+      console.warn(`[ForexFactory] failed from ${url}: ${msg}`);
+      if (status === 429) {
+        console.warn('[ForexFactory] rate limit (429) encountered. Consider setting TRADING_ECONOMICS_API_KEY for a more reliable source or retry later.');
+      }
+    }
+  }
+
+  // Optionally provide a cached fallback when configured (useful for offline/debug)
+  if (process.env.FOREX_FACTORY_CACHE_PATH) {
+    try {
+      const fs = await import('fs');
+      const path = process.env.FOREX_FACTORY_CACHE_PATH as string;
+      if (fs.existsSync(path)) {
+        const raw = fs.readFileSync(path, 'utf-8');
+        const parsed = JSON.parse(raw);
+        console.warn(`[ForexFactory] using cached file at ${path} as fallback (${Array.isArray(parsed) ? parsed.length : 'unknown'} entries)`);
+        // Map to EconomicEvent structure using existing mapping logic by feeding through fetchFromForexFactory mapping
+        // If cached file is already in the external format, re-map items
+        return parsed.map((event: any) => ({
+          eventId: `ff_${event.title}_${event.date}`,
+          title: event.title,
+          country: event.country,
+          currency: event.impact?.toLowerCase() === 'usd' ? 'USD' : getCurrencyFromCountry(event.country),
+          date: new Date(event.date),
+          impact: mapForexFactoryImpact(event.impact),
+          forecast: event.forecast,
+          previous: event.previous,
+          actual: event.actual,
+          description: event.title,
+          source: 'ForexFactory' as const,
+        }));
+      }
+    } catch (cacheErr) {
+      console.warn('[ForexFactory] failed to read cache fallback:', cacheErr?.message || cacheErr);
     }
   }
 
@@ -152,23 +189,30 @@ export async function fetchEconomicEvents(
         const events = await fetchFromTradingEconomics(startDate, endDate);
         console.log(`✅ Fetched ${events.length} events from Trading Economics`);
         return events;
-      } catch (error) {
-        console.warn('⚠️ Trading Economics unavailable, falling back to Forex Factory');
+      } catch (error: any) {
+        console.warn('⚠️ Trading Economics unavailable, falling back to Forex Factory', error?.message || error);
       }
     } else {
       console.warn('⚠️ Trading Economics key missing, using Forex Factory fallback');
     }
 
     try {
-      const events = await withRetry(() => fetchForexFactoryWithFallbacks(), 'ForexFactory', 5, 8000);
+      const events = await withRetry(() => fetchForexFactoryWithFallbacks(), 'ForexFactory', 3, 8000);
       console.log(`✅ Fetched ${events.length} events from Forex Factory`);
       return filterEventsByDateRange(events, startDate, endDate);
-    } catch (fallbackError) {
-      console.error('❌ All data sources failed');
+    } catch (fallbackError: any) {
+      console.warn('❌ All data sources failed:', fallbackError?.message || fallbackError);
+      // Provide more detail for debugging
+      try {
+        const urls = [FOREX_FACTORY_PRIMARY_URL, FOREX_FACTORY_MIRROR_URL].filter(Boolean);
+        console.warn('Tried ForexFactory URLs:', urls);
+      } catch (ex) {
+        // ignore
+      }
       throw new Error('Unable to fetch economic calendar data from any source');
     }
   } catch (error) {
-    console.error('fetchEconomicEvents failed:', (error as any)?.message || error);
+    console.warn('fetchEconomicEvents failed:', (error as any)?.message || error);
     throw error;
   }
 }
