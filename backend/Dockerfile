@@ -40,7 +40,7 @@ RUN bun install --frozen-lockfile
 COPY ./src ./src
 
 # migrations
-# COPY ./scripts ./scripts
+COPY ./scripts ./scripts
 # COPY ./docker-entrypoint.sh ./docker-entrypoint.sh
 # RUN chmod +x ./docker-entrypoint.sh
 
