@@ -90,13 +90,15 @@ export default function SignupPage() {
       calculatePasswordStrength(value);
     }
 
-    // Clear error for this field
+    // Clear error for this field and any server/server-side messages
     if (errors[name]) {
       setErrors(prev => ({
         ...prev,
         [name]: ''
       }));
     }
+    if (serverError) setServerError('');
+    if (googleError) setGoogleError('');
   };
 
   const handleSubmit = async (e) => {

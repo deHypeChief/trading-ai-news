@@ -37,12 +37,12 @@ export const AuthProvider = ({ children }) => {
         }
       );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Login failed');
-      }
-
       const data = await response.json();
+
+      // Treat any success:false or non-OK status as error with a meaningful message
+      if (!response.ok || (typeof data.success !== 'undefined' && data.success === false)) {
+        throw new Error(data.message || 'Login failed');
+      }
 
       if (data.data?.user && data.data?.token) {
         const normalizedUser = normalizeUser(data.data.user);
@@ -77,12 +77,10 @@ export const AuthProvider = ({ children }) => {
         }
       );
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Google authentication failed');
-      }
-
       const data = await response.json();
+      if (!response.ok || (typeof data.success !== 'undefined' && data.success === false)) {
+        throw new Error(data.message || 'Google authentication failed');
+      }
 
       if (data.data?.user && data.data?.token) {
         const normalizedUser = normalizeUser(data.data.user);
@@ -112,13 +110,11 @@ export const AuthProvider = ({ children }) => {
         }
       );
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Registration failed');
+      const data = await response.json();
+      if (!response.ok || (typeof data.success !== 'undefined' && data.success === false)) {
+        throw new Error(data.message || 'Registration failed');
       }
 
-      const data = await response.json();
-      
       if (data.data) {
         await login(email, password);
       }
