@@ -469,25 +469,76 @@ export default function Dashboard() {
 
 	const monthLabel = zonedCurrentMonth.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: displayTimezone });
 
-	const daysInMonth = useMemo(() => {
-		const year = zonedCurrentMonth.getUTCFullYear();
-		const month = zonedCurrentMonth.getUTCMonth();
+// Track which months we've already loaded to avoid refetching
+const [loadedMonths, setLoadedMonths] = useState({});
 
-		// Determine the weekday index of the 1st of the month in the selected timezone.
-		// Use noon UTC to avoid DST/offset edge cases when converting between zones.
-		const firstOfMonthUtcNoon = new Date(Date.UTC(year, month, 1, 12));
-		const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: displayTimezone, weekday: 'short' }).format(firstOfMonthUtcNoon);
-		const startDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayStr);
+// When the user navigates months, lazily fetch that month's events (helps show older months on demand)
+useEffect(() => {
+	let mounted = true;
+	const year = zonedCurrentMonth.getUTCFullYear();
+	const month = zonedCurrentMonth.getUTCMonth();
+	const key = `${year}-${month + 1}`;
+	if (loadedMonths[key]) return;
 
-		// Number of days in month (UTC-based is fine)
-		const lastDayUtc = new Date(Date.UTC(year, month + 1, 0));
-		const daysCount = lastDayUtc.getUTCDate();
+	const fetchMonth = async () => {
+		try {
+			console.debug('Fetching events for month', key);
+			const monthStart = startOfDayInTZ(new Date(Date.UTC(year, month, 1)), displayTimezone);
+			const monthEnd = startOfDayInTZ(new Date(Date.UTC(year, month + 1, 1)), displayTimezone);
+			const params = new URLSearchParams({
+				startDate: monthStart.toISOString(),
+				endDate: monthEnd.toISOString(),
+				limit: '1000',
+				offset: '0',
+			});
+			const res = await fetch(`${API_URL}/api/calendar?${params}`);
+			const data = await res.json();
+			if (!mounted) return;
+			if (data.success) {
+				const newEvents = data.data.events || [];
+				if (newEvents.length) {
+					setTodayEvents(prev => {
+						const map = new Map(prev.map(e => [e.eventId || e._id, e]));
+						for (const e of newEvents) map.set(e.eventId || e._id, e);
+						console.debug(`Loaded ${newEvents.length} events for month ${key}`);
+						return Array.from(map.values());
+					});
+				} else {
+					console.debug('No events for month', key);
+				}
+			} else {
+				console.warn('Failed to load month events', key, data);
+			}
+		} catch (err) {
+			console.error('Error loading month events', key, err);
+		} finally {
+			if (mounted) setLoadedMonths(prev => ({ ...prev, [key]: true }));
+		}
+	};
 
-		const days = [];
-		for (let i = 0; i < startDay; i++) days.push(null);
-		for (let d = 1; d <= daysCount; d++) days.push(d);
-		return days;
-	}, [zonedCurrentMonth, displayTimezone]);
+	fetchMonth();
+	return () => { mounted = false; };
+}, [zonedCurrentMonth, displayTimezone, API_URL, loadedMonths]);
+
+const daysInMonth = useMemo(() => {
+	const year = zonedCurrentMonth.getUTCFullYear();
+	const month = zonedCurrentMonth.getUTCMonth();
+
+	// Determine the weekday index of the 1st of the month in the selected timezone.
+	// Use noon UTC to avoid DST/offset edge cases when converting between zones.
+	const firstOfMonthUtcNoon = new Date(Date.UTC(year, month, 1, 12));
+	const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: displayTimezone, weekday: 'short' }).format(firstOfMonthUtcNoon);
+	const startDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayStr);
+
+	// Number of days in month (UTC-based is fine)
+	const lastDayUtc = new Date(Date.UTC(year, month + 1, 0));
+	const daysCount = lastDayUtc.getUTCDate();
+
+	const days = [];
+	for (let i = 0; i < startDay; i++) days.push(null);
+	for (let d = 1; d <= daysCount; d++) days.push(d);
+	return days;
+}, [zonedCurrentMonth, displayTimezone]);
 
 	const isDaySelected = (key) => selectedDate === key;
 
@@ -966,7 +1017,7 @@ export default function Dashboard() {
 				</div>
 
 				{/* Main Content */}
-				<div className="py-8 mt-5 md:mt">
+				<div className="pb-20 pt-[20vh] md:mt">
 					{/* Primary layout matching sketch */}
 					<div className='relative grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6 '>
 
