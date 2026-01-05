@@ -1,14 +1,24 @@
 {
   "name": "backend",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:rate-limiter": "node scripts/rate-limiter-test.js",
+    "test:backfill": "bun run scripts/test-backfill.ts",
     "migrate:volatility": "node scripts/migrate-volatility.js",
     "migrate:all": "node scripts/run-all-migrations.js",
     "test:volatility": "bun ./src/test/volatility.test.js",
     "migrate:populate-pip": "bun run ./scripts/populate-pip-range.js",
-    "dev": "bun run --watch src/index.ts"
+    "seed-data": "node ./scripts/seed-data.js",
+    "dev": "bun run --watch src/index.ts",
+    "backfill": "bun run scripts/historical-backfill.ts",
+    "backfill:start": "bun run scripts/historical-backfill.ts start",
+    "backfill:status": "bun run scripts/historical-backfill.ts status",
+    "backfill:enrich": "bun run scripts/historical-backfill.ts enrich-only",
+    "backfill:import": "bun run scripts/historical-backfill.ts import-only",
+    "backfill:pause": "bun run scripts/historical-backfill.ts pause",
+    "backfill:resume": "bun run scripts/historical-backfill.ts resume",
+    "backfill:clear": "bun run scripts/historical-backfill.ts clear"
   },
   "dependencies": {
     "@elysiajs/bearer": "latest",
@@ -18,6 +28,7 @@
     "@types/ws": "^8.18.1",
     "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^5.66.4",
     "dotenv": "^16.3.1",
     "elysia": "latest",
     "groq-sdk": "^0.37.0",
