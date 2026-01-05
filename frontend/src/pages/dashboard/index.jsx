@@ -17,7 +17,7 @@ const tzApi = (() => {
 	try {
 		// Fallback: expose keys for debugging in dev
 		if (import.meta.env.DEV) console.debug('TZ_MODULE_KEYS', Object.keys(tz), Object.keys(tz?.default || {}));
-	} catch (e) {}
+	} catch (e) { }
 	return tz;
 })();
 
@@ -199,9 +199,9 @@ export default function Dashboard() {
 				setEventsError('');
 
 				// Build date range aligned to the selected display timezone
-			const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
-			const startDate = new Date(startOfTodayUtc.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days before
-			const endDate = addYearsStartOfDayInTZ(new Date(), displayTimezone, 1); // one year from today (start of day)
+				const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
+				const startDate = new Date(startOfTodayUtc.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days before
+				const endDate = addYearsStartOfDayInTZ(new Date(), displayTimezone, 1); // one year from today (start of day)
 				const params = new URLSearchParams({
 					startDate: startDate.toISOString(),
 					endDate: endDate.toISOString(),
@@ -453,6 +453,13 @@ export default function Dashboard() {
 	const [monthOffset, setMonthOffset] = useState(0);
 	// Trial ended modal state
 	const [showTrialEndedModal, setShowTrialEndedModal] = useState(false);
+	const modalRef = useRef(null);
+	useEffect(() => {
+		if (!showTrialEndedModal) return;
+		if (modalRef.current && typeof modalRef.current.focus === 'function') {
+			modalRef.current.focus();
+		}
+	}, [showTrialEndedModal]);
 	const [upgradeLoading, setUpgradeLoading] = useState(null);
 	// Upgrade banner for free/expired plans
 	const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
@@ -469,76 +476,76 @@ export default function Dashboard() {
 
 	const monthLabel = zonedCurrentMonth.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: displayTimezone });
 
-// Track which months we've already loaded to avoid refetching
-const [loadedMonths, setLoadedMonths] = useState({});
+	// Track which months we've already loaded to avoid refetching
+	const [loadedMonths, setLoadedMonths] = useState({});
 
-// When the user navigates months, lazily fetch that month's events (helps show older months on demand)
-useEffect(() => {
-	let mounted = true;
-	const year = zonedCurrentMonth.getUTCFullYear();
-	const month = zonedCurrentMonth.getUTCMonth();
-	const key = `${year}-${month + 1}`;
-	if (loadedMonths[key]) return;
+	// When the user navigates months, lazily fetch that month's events (helps show older months on demand)
+	useEffect(() => {
+		let mounted = true;
+		const year = zonedCurrentMonth.getUTCFullYear();
+		const month = zonedCurrentMonth.getUTCMonth();
+		const key = `${year}-${month + 1}`;
+		if (loadedMonths[key]) return;
 
-	const fetchMonth = async () => {
-		try {
-			console.debug('Fetching events for month', key);
-			const monthStart = startOfDayInTZ(new Date(Date.UTC(year, month, 1)), displayTimezone);
-			const monthEnd = startOfDayInTZ(new Date(Date.UTC(year, month + 1, 1)), displayTimezone);
-			const params = new URLSearchParams({
-				startDate: monthStart.toISOString(),
-				endDate: monthEnd.toISOString(),
-				limit: '1000',
-				offset: '0',
-			});
-			const res = await fetch(`${API_URL}/api/calendar?${params}`);
-			const data = await res.json();
-			if (!mounted) return;
-			if (data.success) {
-				const newEvents = data.data.events || [];
-				if (newEvents.length) {
-					setTodayEvents(prev => {
-						const map = new Map(prev.map(e => [e.eventId || e._id, e]));
-						for (const e of newEvents) map.set(e.eventId || e._id, e);
-						console.debug(`Loaded ${newEvents.length} events for month ${key}`);
-						return Array.from(map.values());
-					});
+		const fetchMonth = async () => {
+			try {
+				console.debug('Fetching events for month', key);
+				const monthStart = startOfDayInTZ(new Date(Date.UTC(year, month, 1)), displayTimezone);
+				const monthEnd = startOfDayInTZ(new Date(Date.UTC(year, month + 1, 1)), displayTimezone);
+				const params = new URLSearchParams({
+					startDate: monthStart.toISOString(),
+					endDate: monthEnd.toISOString(),
+					limit: '1000',
+					offset: '0',
+				});
+				const res = await fetch(`${API_URL}/api/calendar?${params}`);
+				const data = await res.json();
+				if (!mounted) return;
+				if (data.success) {
+					const newEvents = data.data.events || [];
+					if (newEvents.length) {
+						setTodayEvents(prev => {
+							const map = new Map(prev.map(e => [e.eventId || e._id, e]));
+							for (const e of newEvents) map.set(e.eventId || e._id, e);
+							console.debug(`Loaded ${newEvents.length} events for month ${key}`);
+							return Array.from(map.values());
+						});
+					} else {
+						console.debug('No events for month', key);
+					}
 				} else {
-					console.debug('No events for month', key);
+					console.warn('Failed to load month events', key, data);
 				}
-			} else {
-				console.warn('Failed to load month events', key, data);
+			} catch (err) {
+				console.error('Error loading month events', key, err);
+			} finally {
+				if (mounted) setLoadedMonths(prev => ({ ...prev, [key]: true }));
 			}
-		} catch (err) {
-			console.error('Error loading month events', key, err);
-		} finally {
-			if (mounted) setLoadedMonths(prev => ({ ...prev, [key]: true }));
-		}
-	};
+		};
 
-	fetchMonth();
-	return () => { mounted = false; };
-}, [zonedCurrentMonth, displayTimezone, API_URL, loadedMonths]);
+		fetchMonth();
+		return () => { mounted = false; };
+	}, [zonedCurrentMonth, displayTimezone, API_URL, loadedMonths]);
 
-const daysInMonth = useMemo(() => {
-	const year = zonedCurrentMonth.getUTCFullYear();
-	const month = zonedCurrentMonth.getUTCMonth();
+	const daysInMonth = useMemo(() => {
+		const year = zonedCurrentMonth.getUTCFullYear();
+		const month = zonedCurrentMonth.getUTCMonth();
 
-	// Determine the weekday index of the 1st of the month in the selected timezone.
-	// Use noon UTC to avoid DST/offset edge cases when converting between zones.
-	const firstOfMonthUtcNoon = new Date(Date.UTC(year, month, 1, 12));
-	const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: displayTimezone, weekday: 'short' }).format(firstOfMonthUtcNoon);
-	const startDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayStr);
+		// Determine the weekday index of the 1st of the month in the selected timezone.
+		// Use noon UTC to avoid DST/offset edge cases when converting between zones.
+		const firstOfMonthUtcNoon = new Date(Date.UTC(year, month, 1, 12));
+		const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: displayTimezone, weekday: 'short' }).format(firstOfMonthUtcNoon);
+		const startDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekdayStr);
 
-	// Number of days in month (UTC-based is fine)
-	const lastDayUtc = new Date(Date.UTC(year, month + 1, 0));
-	const daysCount = lastDayUtc.getUTCDate();
+		// Number of days in month (UTC-based is fine)
+		const lastDayUtc = new Date(Date.UTC(year, month + 1, 0));
+		const daysCount = lastDayUtc.getUTCDate();
 
-	const days = [];
-	for (let i = 0; i < startDay; i++) days.push(null);
-	for (let d = 1; d <= daysCount; d++) days.push(d);
-	return days;
-}, [zonedCurrentMonth, displayTimezone]);
+		const days = [];
+		for (let i = 0; i < startDay; i++) days.push(null);
+		for (let d = 1; d <= daysCount; d++) days.push(d);
+		return days;
+	}, [zonedCurrentMonth, displayTimezone]);
 
 	const isDaySelected = (key) => selectedDate === key;
 
@@ -562,10 +569,12 @@ const daysInMonth = useMemo(() => {
 			const sub = user?.subscription;
 			console.log('Dashboard subscription check', { sub, bannerDismissed });
 			if (!sub) return;
-			const trialEnds = sub?.trialEndsAt ? new Date(sub.trialEndsAt) : null;
-			const trialExpired = trialEnds && new Date() >= trialEnds && sub.plan === 'free';
-			if (trialExpired) {
-				console.log('Trial expired detected, showing modal');
+// Determine trial end date (prefer explicit, otherwise infer 3-day trial from account creation)
+            const TRIAL_DAYS = 3;
+            const trialEnds = sub?.trialEndsAt ? new Date(sub.trialEndsAt) : (sub?.createdAt ? new Date(new Date(sub.createdAt).getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000) : null);
+            const trialExpired = sub.status === 'trial' && (trialEnds ? new Date() >= trialEnds : true) && sub.plan === 'free';
+            if (trialExpired) {
+                console.log('Trial expired detected (inferred), showing modal');
 				setShowTrialEndedModal(true);
 			}
 
@@ -582,11 +591,6 @@ const daysInMonth = useMemo(() => {
 		}
 	}, [user, bannerDismissed]);
 
-	const dismissUpgradeBanner = () => {
-		setShowUpgradeBanner(false);
-		setBannerDismissed(true);
-		try { localStorage.setItem('upgradeBannerDismissed', '1'); } catch (e) { }
-	};
 
 	const handleUpgrade = async (planId) => {
 		if (!user) return alert('Not signed in');
@@ -678,12 +682,12 @@ const daysInMonth = useMemo(() => {
 			const params = new URLSearchParams();
 
 			// Date range aligned to the selected display timezone
-		const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
-		const zonedStart = new Date(startOfTodayUtc.getTime() - 0 * 24 * 60 * 60 * 1000);
-		const zonedEnd = addYearsStartOfDayInTZ(new Date(), displayTimezone, 1);
+			const startOfTodayUtc = startOfDayInTZ(new Date(), displayTimezone);
+			const zonedStart = new Date(startOfTodayUtc.getTime() - 0 * 24 * 60 * 60 * 1000);
+			const zonedEnd = addYearsStartOfDayInTZ(new Date(), displayTimezone, 1);
 
-		const startDateUtc = zonedStart;
-		const endDateUtc = zonedEnd;
+			const startDateUtc = zonedStart;
+			const endDateUtc = zonedEnd;
 			params.append('startDate', startDateUtc.toISOString());
 			params.append('endDate', endDateUtc.toISOString());
 			params.append('limit', eventsLimit.toString());
@@ -923,25 +927,11 @@ const daysInMonth = useMemo(() => {
 			</nav>
 
 			<div className="px-4 sm:px-6 lg:px-20">
-				{/* Upgrade banner for free or expired plans */}
-				{showUpgradeBanner && (
-					<div className="mb-4 rounded-md bg-yellow-50 border border-yellow-100 p-4 flex items-center justify-between gap-4">
-						<div className="flex items-start gap-3">
-							<div className="text-yellow-600 font-semibold">Upgrade to Pro</div>
-							<div className="text-sm text-yellow-800">You are on the Free plan or your plan has expired. Upgrade to continue using premium features.</div>
-						</div>
-						<div className="flex items-center gap-3">
-							<button onClick={() => handleUpgrade('monthly')} className="bg-black text-white px-4 py-2 rounded">Upgrade Monthly</button>
-							<button onClick={() => handleUpgrade('yearly')} className="border border-gray-200 px-4 py-2 rounded">Upgrade Yearly</button>
-							<button onClick={dismissUpgradeBanner} className="text-xs text-gray-500 underline">Dismiss</button>
-						</div>
-					</div>
-				)}
 
 				{/* Trial ended modal (non-dismissible) */}
 				{showTrialEndedModal && (
-					<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[20] backdrop-blur-sm" role="dialog" aria-modal="true">
-						<div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 mx-4" onClick={(e) => e.stopPropagation()}>
+					<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-60 backdrop-blur-sm" role="dialog" aria-modal="true">
+						<div ref={modalRef} className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 mx-4" onClick={(e) => e.stopPropagation()} tabIndex={-1}>
 							<div className="flex items-start justify-between mb-4">
 								<div>
 									<h3 className="text-lg font-bold">Your access has ended</h3>
@@ -1247,15 +1237,14 @@ const daysInMonth = useMemo(() => {
 																						{[1, 2, 3, 4, 5].map((bar) => (
 																							<div
 																								key={bar}
-																								className={`w-1 h-3 rounded-sm ${
-																									bar <= event.volatilityScore
+																								className={`w-1 h-3 rounded-sm ${bar <= event.volatilityScore
 																										? event.volatilityScore === 1 ? 'bg-green-500' :
-																										  event.volatilityScore === 2 ? 'bg-yellow-500' :
-																										  event.volatilityScore === 3 ? 'bg-yellow-600' :
-																										  event.volatilityScore === 4 ? 'bg-orange-500' :
-																										  'bg-red-500'
+																											event.volatilityScore === 2 ? 'bg-yellow-500' :
+																												event.volatilityScore === 3 ? 'bg-yellow-600' :
+																													event.volatilityScore === 4 ? 'bg-orange-500' :
+																														'bg-red-500'
 																										: 'bg-gray-300'
-																								}`}
+																									}`}
 																							/>
 																						))}
 																					</div>
@@ -1271,10 +1260,10 @@ const daysInMonth = useMemo(() => {
 																								<p className="font-medium">Volatility</p>
 																								<p>Score: <span className="font-semibold">{event.volatilityScore ?? 'N/A'}</span></p>
 																								{event.pipRange ? (
-																															<p>Pip Range: <span className="font-semibold">{event.pipRange.pips ?? 'N/A'} pips ({event.pipRange.low ?? event.pipRange.min ?? 'N/A'}–{event.pipRange.high ?? event.pipRange.max ?? 'N/A'})</span></p>
-																																) : (
-																																	<p>Pip Range: <span className="font-semibold">{event.expectedPipRange?.min ?? 'N/A'}–{event.expectedPipRange?.max ?? 'N/A'} pips</span></p>
-																																)}
+																									<p>Pip Range: <span className="font-semibold">{event.pipRange.pips ?? 'N/A'} pips ({event.pipRange.low ?? event.pipRange.min ?? 'N/A'}–{event.pipRange.high ?? event.pipRange.max ?? 'N/A'})</span></p>
+																								) : (
+																									<p>Pip Range: <span className="font-semibold">{event.expectedPipRange?.min ?? 'N/A'}–{event.expectedPipRange?.max ?? 'N/A'} pips</span></p>
+																								)}
 																								<p>Window: <span className="font-semibold">{event.volatilityWindow ?? 'N/A'}</span></p>
 																								<p>Confidence: <span className="font-semibold">{event.confidenceScore ?? 'N/A'}</span></p>
 																							</div>
@@ -1338,12 +1327,12 @@ const daysInMonth = useMemo(() => {
 																					{/* Volatility details */}
 																					<div className="mt-3 border-t pt-3">
 																						<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-2">
-																							
+
 																							<div>
 																								<span className="text-gray-500">Pip Range:</span>
-																									<span className="ml-2 font-medium">
-																										{event.pipRange ? `${event.pipRange.pips ?? 'N/A'} pips (${event.pipRange.low ?? event.pipRange.min ?? 'N/A'}–${event.pipRange.high ?? event.pipRange.max ?? 'N/A'})` : (event.expectedPipRange ? `${event.expectedPipRange.min ?? 'N/A'}–${event.expectedPipRange.max ?? 'N/A'}` : '—')}
-																									</span>
+																								<span className="ml-2 font-medium">
+																									{event.pipRange ? `${event.pipRange.pips ?? 'N/A'} pips (${event.pipRange.low ?? event.pipRange.min ?? 'N/A'}–${event.pipRange.high ?? event.pipRange.max ?? 'N/A'})` : (event.expectedPipRange ? `${event.expectedPipRange.min ?? 'N/A'}–${event.expectedPipRange.max ?? 'N/A'}` : '—')}
+																								</span>
 																							</div>
 																							<div>
 																								<span className="text-gray-500">Window:</span>
