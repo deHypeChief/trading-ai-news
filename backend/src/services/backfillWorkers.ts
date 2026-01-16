@@ -20,14 +20,14 @@ import {
   addNewsFetchJob,
 } from './queue';
 import {
-  consumeGroqToken,
-  setGroqCooldown,
-  waitForGroqAvailability,
-  isGroqRateLimited,
-  getGroqRateLimitStatus,
-} from './groqRateLimiter';
+  consumeGenaiToken,
+  setGenaiCooldown,
+  waitForGenaiAvailability,
+  isGenaiRateLimited,
+  getGenaiRateLimitStatus,
+} from './genaiRateLimiter';
 import { fetchHistoricalEvents } from './historicalFetcher';
-import { analyzeEventRelevance, inferVolatility, summarizeTextShort, generateInDepthAnalysis } from './groq';
+import { analyzeEventRelevance, inferVolatility, summarizeTextShort, generateInDepthAnalysis, generateStructuredAnalysis } from './genai';
 import { runVolatilityEngine } from './volatilityEngine';
 import { fetchNewsForEvent } from './news';
 
@@ -138,7 +138,7 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
   
   const results: Record<string, boolean> = {};
   
-  // Prepare event input for Groq
+  // Prepare event input for Genai
   const eventInput = {
     title: event.eventName,
     description: event.description,
@@ -153,9 +153,9 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
   if (tasks.includes('analysis') && !event.aiAnalyzedAt) {
     try {
       // Wait for rate limit availability
-      const available = await waitForGroqAvailability(60000);
+      const available = await waitForGenaiAvailability(60000);
       if (!available) {
-        throw new Error('GROQ_RATE_LIMIT');
+        throw new Error('GENAI_RATE_LIMIT');
       }
       
       const analysis = await analyzeEventRelevance(eventInput);
@@ -177,9 +177,9 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
       console.log(`[AIWorker] ✅ Analysis complete for ${event.eventName}`);
     } catch (error: any) {
       results.analysis = false;
-      if (error.message === 'GROQ_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
+      if (error.message === 'GENAI_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
         stats.rateLimitHits++;
-        await setGroqCooldown(60000);
+        await setGenaiCooldown(60000);
         throw error; // Retry later
       }
       console.warn(`[AIWorker] Analysis failed for ${eventId}:`, error.message);
@@ -191,9 +191,9 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
   // 2. Volatility Analysis
   if (tasks.includes('volatility') && !event.volatilityScore) {
     try {
-      const available = await waitForGroqAvailability(60000);
+      const available = await waitForGenaiAvailability(60000);
       if (!available) {
-        throw new Error('GROQ_RATE_LIMIT');
+        throw new Error('GENAI_RATE_LIMIT');
       }
       
       const regime = process.env.CURRENT_MARKET_REGIME as any;
@@ -219,15 +219,67 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
       console.log(`[AIWorker] ✅ Volatility complete for ${event.eventName}`);
     } catch (error: any) {
       results.volatility = false;
-      if (error.message === 'GROQ_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
+      if (error.message === 'GENAI_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
         stats.rateLimitHits++;
-        await setGroqCooldown(60000);
+        await setGenaiCooldown(60000);
         throw error;
       }
       console.warn(`[AIWorker] Volatility failed for ${eventId}:`, error.message);
     }
   } else {
     results.volatility = true;
+  }
+  
+  // 2.5. Structured Analysis for SaaS Dashboard
+  if (tasks.includes('structured') && !event.anticipatedVolatility) {
+    try {
+      const available = await waitForGenaiAvailability(60000);
+      if (!available) {
+        throw new Error('GENAI_RATE_LIMIT');
+      }
+      
+      const structuredAnalysis = await generateStructuredAnalysis({
+        title: eventInput.title,
+        description: eventInput.description,
+        currency: eventInput.currency,
+        impact: eventInput.impact,
+        previous: eventInput.previous,
+        forecast: eventInput.forecast,
+        actual: eventInput.actual,
+        newsHeadline: event.newsHeadline || '',
+        newsSummary: event.aiSummary || '',
+      });
+      
+      // Only save if not a fallback response
+      if (!(structuredAnalysis as any).isFallback) {
+        await Event.updateOne(
+          { eventId },
+          {
+            $set: {
+              anticipatedVolatility: structuredAnalysis.anticipatedVolatility,
+              whatThisMeans: structuredAnalysis.whatThisMeans,
+              marketImpact: structuredAnalysis.marketImpact,
+              crossAssetImpact: structuredAnalysis.crossAssetImpact,
+            },
+          }
+        );
+        results.structured = true;
+        console.log(`[AIWorker] ✅ Structured analysis complete for ${event.eventName}`);
+      } else {
+        console.warn(`[AIWorker] Skipping fallback structured analysis for ${event.eventName}`);
+        results.structured = false;
+      }
+    } catch (error: any) {
+      results.structured = false;
+      if (error.message === 'GENAI_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
+        stats.rateLimitHits++;
+        await setGenaiCooldown(60000);
+        throw error;
+      }
+      console.warn(`[AIWorker] Structured analysis failed for ${eventId}:`, error.message);
+    }
+  } else {
+    results.structured = true;
   }
   
   // 3. News + Summary
@@ -262,9 +314,9 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
       
       // Now summarize
       if (newsContent) {
-        const available = await waitForGroqAvailability(60000);
+        const available = await waitForGenaiAvailability(60000);
         if (!available) {
-          throw new Error('GROQ_RATE_LIMIT');
+          throw new Error('GENAI_RATE_LIMIT');
         }
         
         const summary = await summarizeTextShort(newsContent, newsHeadline);
@@ -281,9 +333,9 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
       }
     } catch (error: any) {
       results.summary = false;
-      if (error.message === 'GROQ_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
+      if (error.message === 'GENAI_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
         stats.rateLimitHits++;
-        await setGroqCooldown(60000);
+        await setGenaiCooldown(60000);
         throw error;
       }
       console.warn(`[AIWorker] Summary failed for ${eventId}:`, error.message);
@@ -295,9 +347,9 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
   // 4. In-depth Analysis
   if (tasks.includes('indepth') && !event.aiInDepthAnalysis) {
     try {
-      const available = await waitForGroqAvailability(60000);
+      const available = await waitForGenaiAvailability(60000);
       if (!available) {
-        throw new Error('GROQ_RATE_LIMIT');
+        throw new Error('GENAI_RATE_LIMIT');
       }
       
       const refreshedEvent = await Event.findOne({ eventId }).lean();
@@ -319,9 +371,9 @@ async function processAIEnrichment(job: Job<AIEnrichmentJob>): Promise<any> {
       console.log(`[AIWorker] ✅ In-depth complete for ${event.eventName}`);
     } catch (error: any) {
       results.indepth = false;
-      if (error.message === 'GROQ_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
+      if (error.message === 'GENAI_RATE_LIMIT' || error?.error?.code === 'rate_limit_exceeded') {
         stats.rateLimitHits++;
-        await setGroqCooldown(60000);
+        await setGenaiCooldown(60000);
         throw error;
       }
       console.warn(`[AIWorker] In-depth failed for ${eventId}:`, error.message);
@@ -410,7 +462,7 @@ export async function startWorkers(options: {
     }
   );
   
-  // AI Enrichment Worker - rate limited by Groq
+  // AI Enrichment Worker - rate limited by Genai
   aiEnrichmentWorker = new Worker<AIEnrichmentJob>(
     QUEUE_NAMES.AI_ENRICHMENT,
     processAIEnrichment,
@@ -418,7 +470,7 @@ export async function startWorkers(options: {
       connection,
       concurrency: concurrency.ai || 1, // Sequential for rate limiting
       limiter: {
-        max: parseInt(process.env.GROQ_RPM_LIMIT || '80', 10),
+        max: parseInt(process.env.GENAI_RPM_LIMIT || '30', 10),
         duration: 60000,
       },
     }

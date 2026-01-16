@@ -2,7 +2,7 @@
  * Redis-based Rate Limiter for External APIs
  * 
  * Provides distributed rate limiting for:
- * - Groq API (paid tier: ~60 RPM, with burst handling)
+ * - Genai API (Gemini: ~10 RPM conservative)
  * - ForexFactory (conservative: ~10 RPM to avoid blocks)
  * - News API (based on tier)
  */
@@ -11,10 +11,10 @@ import { getRedisClient } from '../config/redis';
 
 // Rate limit configurations
 export const RATE_LIMITS = {
-  groq: {
-    maxRequests: parseInt(process.env.GROQ_RATE_LIMIT_RPM || '60', 10),
+  genai: {
+    maxRequests: parseInt(process.env.GENAI_RATE_LIMIT_RPM || '10', 10),
     windowMs: 60_000,
-    keyPrefix: 'ratelimit:groq',
+    keyPrefix: 'ratelimit:genai',
   },
   forexfactory: {
     maxRequests: parseInt(process.env.FF_RATE_LIMIT_RPM || '10', 10),
@@ -301,7 +301,7 @@ function sleep(ms: number): Promise<void> {
  * Get all rate limit statuses
  */
 export async function getAllRateLimitStatuses(): Promise<Record<string, RateLimitResult>> {
-  const services: RateLimitService[] = ['groq', 'forexfactory', 'news'];
+  const services: RateLimitService[] = ['genai', 'forexfactory', 'news'];
   const statuses: Record<string, RateLimitResult> = {};
 
   for (const service of services) {

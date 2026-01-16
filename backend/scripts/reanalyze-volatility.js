@@ -2,7 +2,7 @@
 const { connectDB, disconnectDB } = require('../src/config/database');
 const { Event } = require('../src/models/Event');
 const { runVolatilityEngine } = require('../src/services/volatilityEngine');
-const { isGroqRateLimited } = require('../src/services/groq');
+const { isGenaiRateLimited } = require('../src/services/genai');
 
 async function reanalyzeVolatility() {
   await connectDB();
@@ -27,7 +27,7 @@ async function reanalyzeVolatility() {
     for (const event of events) {
       try {
         // Skip if rate limited
-        if (isGroqRateLimited()) {
+        if (isGenaiRateLimited()) {
           console.log('Rate limited, skipping remaining events');
           break;
         }

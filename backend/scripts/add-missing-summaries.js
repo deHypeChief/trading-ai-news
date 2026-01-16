@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { Event } = require('../src/models/Event');
-const { summarizeTextShort } = require('../src/services/groq');
+const { summarizeTextShort } = require('../src/services/genai');
 
 async function addMissingSummaries() {
   try {

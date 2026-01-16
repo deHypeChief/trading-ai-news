@@ -2,7 +2,7 @@
 import { connectDB, disconnectDB } from '../src/config/database';
 import { Event } from '../src/models/Event';
 import { runVolatilityEngine } from '../src/services/volatilityEngine';
-import { isGroqRateLimited } from '../src/services/groq';
+import { isGenaiRateLimited } from '../src/services/genai';
 
 async function reanalyzeVolatility() {
   await connectDB();
@@ -27,7 +27,7 @@ async function reanalyzeVolatility() {
     for (const event of events) {
       try {
         // Skip if rate limited
-        if (isGroqRateLimited()) {
+        if (isGenaiRateLimited()) {
           console.log('Rate limited, skipping remaining events');
           break;
         }

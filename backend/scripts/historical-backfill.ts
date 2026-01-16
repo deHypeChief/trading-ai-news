@@ -3,7 +3,7 @@
  * Historical Backfill CLI
  * 
  * Efficient 7-year backfill script using BullMQ for job queuing,
- * Redis-based rate limiting for Groq, and newest-first processing.
+ * Redis-based rate limiting for GenAI, and newest-first processing.
  * 
  * Usage:
  *   bun run scripts/historical-backfill.ts [command] [options]
@@ -129,7 +129,7 @@ function sleep(ms: number) {
 async function runBackfill(options: ReturnType<typeof parseArgs>['options']) {
   const { initQueues, addEventImportJob, getQueueStats, clearAllQueues, pauseAllQueues, resumeAllQueues, closeQueues } = await import('../src/services/queue');
   const { startWorkers, stopWorkers, getWorkerStats } = await import('../src/services/backfillWorkers');
-  const { getGroqRateLimitStatus, resetGroqRateLimiter } = await import('../src/services/groqRateLimiter');
+  const { getGenaiRateLimitStatus, resetGenaiRateLimiter } = await import('../src/services/genaiRateLimiter');
   
   console.log('\n🚀 Starting Historical Backfill');
   console.log('================================');
@@ -150,8 +150,8 @@ async function runBackfill(options: ReturnType<typeof parseArgs>['options']) {
     console.log(`  - Estimated ${ranges.length * 30} events (avg 30/week)`);
     console.log(`  - Estimated AI calls: ${ranges.length * 30 * 4} (4 per event)`);
     
-    const groqRpm = parseInt(process.env.GROQ_RPM_LIMIT || '80', 10);
-    const estimatedMinutes = (ranges.length * 30 * 4) / groqRpm;
+    const genaiRpm = parseInt(process.env.GENAI_RPM_LIMIT || '30', 10);
+    const estimatedMinutes = (ranges.length * 30 * 4) / genaiRpm;
     console.log(`  - Estimated time: ${formatDuration(estimatedMinutes * 60 * 1000)}`);
     
     await closeRedis();
@@ -170,7 +170,7 @@ async function runBackfill(options: ReturnType<typeof parseArgs>['options']) {
   });
   
   // Reset rate limiter for fresh start
-  await resetGroqRateLimiter();
+  await resetGenaiRateLimiter();
   
   // Queue import jobs (newest first)
   console.log('\n📥 Queueing import jobs...');
@@ -196,7 +196,7 @@ async function runBackfill(options: ReturnType<typeof parseArgs>['options']) {
     try {
       const queueStats = await getQueueStats();
       const workerStats = getWorkerStats();
-      const rateLimitStatus = await getGroqRateLimitStatus();
+      const rateLimitStatus = await getGenaiRateLimitStatus();
       
       const totalEvents = await Event.countDocuments();
       const enrichedEvents = await Event.countDocuments({ aiAnalyzedAt: { $exists: true } });
@@ -241,8 +241,8 @@ async function runBackfill(options: ReturnType<typeof parseArgs>['options']) {
       console.log(`  Enriched: ${enrichedEvents} (${Math.round((enrichedEvents / totalEvents) * 100) || 0}%)`);
       console.log('');
       
-      // Groq rate limit
-      console.log('🤖 Groq Rate Limit:');
+      // Genai rate limit
+      console.log('🤖 Genai Rate Limit:');
       console.log(`  Tokens: ${rateLimitStatus.remainingTokens}/${rateLimitStatus.maxTokens}`);
       console.log(`  Status: ${rateLimitStatus.isLimited ? '🔴 LIMITED' : '🟢 OK'}`);
       if (rateLimitStatus.cooldownUntil) {
@@ -295,12 +295,12 @@ async function runBackfill(options: ReturnType<typeof parseArgs>['options']) {
 // Status command
 async function showStatus() {
   const { initQueues, getQueueStats, closeQueues } = await import('../src/services/queue');
-  const { getGroqRateLimitStatus } = await import('../src/services/groqRateLimiter');
+  const { getGenaiRateLimitStatus } = await import('../src/services/genaiRateLimiter');
   
   await initQueues();
   
   const queueStats = await getQueueStats();
-  const rateLimitStatus = await getGroqRateLimitStatus();
+  const rateLimitStatus = await getGenaiRateLimitStatus();
   
   const totalEvents = await Event.countDocuments();
   const enrichedEvents = await Event.countDocuments({ aiAnalyzedAt: { $exists: true } });
@@ -325,7 +325,7 @@ async function showStatus() {
     console.log(`    Completed: ${(stats as any).completed} | Failed: ${(stats as any).failed}`);
   }
   
-  console.log('\n🤖 Groq Rate Limit:');
+  console.log('\n🤖 Genai Rate Limit:');
   console.log(`  Tokens: ${rateLimitStatus.remainingTokens}/${rateLimitStatus.maxTokens}`);
   console.log(`  Status: ${rateLimitStatus.isLimited ? '🔴 LIMITED' : '🟢 OK'}`);
   

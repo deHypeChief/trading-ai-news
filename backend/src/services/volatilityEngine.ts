@@ -1,4 +1,4 @@
-import { inferVolatility } from './groq';
+import { inferVolatility } from './genai';
 import { getEventMemory, storePrediction } from './volatilityMemory';
 import { mapPipRange } from '../logic/pipMapper';
 import { adjustFromMemory } from '../logic/memoryAdjuster';
@@ -10,8 +10,8 @@ export async function runVolatilityEngine(event: any, regime?: MarketRegime): Pr
 
   const memory = await getEventMemory(eventKey, regime);
 
-  // Call Groq for base inference
-  const groqOut = await inferVolatility({
+  // Call GenAI for base inference
+  const genaiOut = await inferVolatility({
     title: event.eventName,
     description: event.description,
     currency: event.currency,
@@ -21,7 +21,7 @@ export async function runVolatilityEngine(event: any, regime?: MarketRegime): Pr
     actual: event.actual,
   });
 
-  let { volatilityScore, volatilityWindow, drivers, directionalBias, executionNotes } = groqOut;
+  let { volatilityScore, volatilityWindow, drivers, directionalBias, executionNotes } = genaiOut;
 
   // Adjust from memory and regime
   volatilityScore = adjustFromMemory(volatilityScore, memory as any[]);

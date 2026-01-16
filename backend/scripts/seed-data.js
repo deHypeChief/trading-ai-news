@@ -2,7 +2,7 @@
 const { connectDB, disconnectDB } = require('../src/config/database');
 const { fetchEconomicEvents } = require('../src/services/calendar');
 const { Event } = require('../src/models/Event');
-const { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGroqRateLimited } = require('../src/services/groq');
+const { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGenaiRateLimited } = require('../src/services/genai');
 const { runVolatilityEngine } = require('../src/services/volatilityEngine');
 const { fetchNewsForEvent } = require('../src/services/news');
 
@@ -55,7 +55,7 @@ async function seedRange(startDate, endDate, opts = {}) {
       let summarizedCount = 0;
       let indepthCount = 0;
 
-      let groqLimited = false;
+      let genaiLimited = false;
 
       for (const externalEvent of externalEvents) {
         try {
@@ -89,7 +89,7 @@ async function seedRange(startDate, endDate, opts = {}) {
           syncedCount++;
 
           // AI analysis
-          if (!groqLimited && !isGroqRateLimited()) {
+          if (!genaiLimited && !isGenaiRateLimited()) {
             try {
               const ai = await analyzeEventRelevance({
                 title: externalEvent.title,
@@ -111,9 +111,9 @@ async function seedRange(startDate, endDate, opts = {}) {
 
               analyzedCount++;
             } catch (err) {
-              if (err?.code === 'GROQ_RATE_LIMIT') {
-                groqLimited = true;
-                console.warn('  Groq rate limit reached; skipping remaining AI work in this batch');
+              if (err?.code === 'GENAI_RATE_LIMIT') {
+                genaiLimited = true;
+                console.warn('  GenAI rate limit reached; skipping remaining AI work in this batch');
               } else {
                 console.warn('  AI analysis failed for', externalEvent.title, err?.message || err);
               }
@@ -121,7 +121,7 @@ async function seedRange(startDate, endDate, opts = {}) {
           }
 
           // Volatility
-          if (!groqLimited && !isGroqRateLimited()) {
+          if (!genaiLimited && !isGenaiRateLimited()) {
             try {
               const regime = process.env.CURRENT_MARKET_REGIME;
               const vol = await runVolatilityEngine(externalEvent, regime);
@@ -144,7 +144,7 @@ async function seedRange(startDate, endDate, opts = {}) {
 
           // News + summary
           let shortSummary = '';
-          if (!groqLimited && !isGroqRateLimited()) {
+          if (!genaiLimited && !isGenaiRateLimited()) {
             try {
               const news = await fetchNewsForEvent(externalEvent.title, externalEvent.currency, externalEvent.date);
               if (news) {
@@ -166,9 +166,9 @@ async function seedRange(startDate, endDate, opts = {}) {
                 summarizedCount++;
               }
             } catch (err) {
-              if (err?.code === 'GROQ_RATE_LIMIT') {
-                groqLimited = true;
-                console.warn('  Groq rate limit reached during news/summarize; skipping remaining AI work in this batch');
+              if (err?.code === 'GENAI_RATE_LIMIT') {
+                genaiLimited = true;
+                console.warn('  GenAI rate limit reached during news/summarize; skipping remaining AI work in this batch');
               } else {
                 console.warn('  News fetch/summarize failed for', externalEvent.title, err?.message || err);
               }
@@ -176,7 +176,7 @@ async function seedRange(startDate, endDate, opts = {}) {
           }
 
           // In-depth
-          if (!groqLimited && !isGroqRateLimited()) {
+          if (!genaiLimited && !isGenaiRateLimited()) {
             try {
               const indepth = await generateInDepthAnalysis({
                 title: externalEvent.title,
@@ -195,9 +195,9 @@ async function seedRange(startDate, endDate, opts = {}) {
                 indepthCount++;
               }
             } catch (err) {
-              if (err?.code === 'GROQ_RATE_LIMIT') {
-                groqLimited = true;
-                console.warn('  Groq rate limit reached during in-depth; skipping remaining AI work in this batch');
+              if (err?.code === 'GENAI_RATE_LIMIT') {
+                genaiLimited = true;
+                console.warn('  GenAI rate limit reached during in-depth; skipping remaining AI work in this batch');
               } else {
                 console.warn('  In-depth analysis failed for', externalEvent.title, err?.message || err);
               }

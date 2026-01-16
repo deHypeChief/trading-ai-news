@@ -299,11 +299,11 @@ export default function SignupPage() {
               />
               <label htmlFor="terms" className="text-sm text-gray-600">
                 I agree to the{' '}
-                <a href="#" className="text-[#FF0000] hover:underline">
+                <a href="#" className="text-[#1c6eff] hover:underline">
                   Terms of Service
                 </a>{' '}
                 and{' '}
-                <a href="#" className="text-[#FF0000] hover:underline">
+                <a href="#" className="text-[#1c6eff] hover:underline">
                   Privacy Policy
                 </a>
               </label>
@@ -316,7 +316,7 @@ export default function SignupPage() {
             <Button
               type="submit"
               disabled={loading}
-              className="w-full mt-6 bg-[#FF0000] hover:bg-[#FF0000] text-white"
+              className="w-full mt-6 bg-[#1c6eff] hover:bg-[#1c6eff] text-white"
               size="lg"
             >
               {loading ? 'Creating Account...' : 'Create Account'}
@@ -348,7 +348,7 @@ export default function SignupPage() {
           <div className="mt-6 text-center">
             <p className="text-gray-600">
               Already have an account?{' '}
-              <Link to="/login" className="text-[#FF0000] font-medium hover:underline">
+              <Link to="/login" className="text-[#1c6eff] font-medium hover:underline">
                 Log in
               </Link>
             </p>

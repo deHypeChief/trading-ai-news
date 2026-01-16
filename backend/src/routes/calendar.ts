@@ -1,12 +1,13 @@
 import { Elysia, t } from 'elysia';
 import { Event } from '../models/Event';
 import { fetchEconomicEvents, getTodayEvents, getUpcomingHighImpactEvents } from '../services/calendar';
-import { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGroqRateLimited } from '../services/groq';
+import { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, generateStructuredAnalysis, isGenaiRateLimited, listGenaiModels } from '../services/genai';
 import { runVolatilityEngine } from '../services/volatilityEngine';
 import { broadcastEventUpdate } from '../services/websocket';
 import { ApiError } from '../utils/errors';
 import { fetchNewsForEvent } from '../services/news';
 import { subscriptionMiddleware } from '../middleware/subscription';
+import { getGenaiRateLimitStatus, consumeGenaiToken } from '../services/genaiRateLimiter';
 
 export const calendarRoutes = new Elysia({ prefix: '/calendar' })
   .use(subscriptionMiddleware)
@@ -251,7 +252,7 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
         broadcastEventUpdate(event, 'update');
 
         // Analyze with AI if not already analyzed or if data changed
-        if (!isGroqRateLimited() && (!event.aiAnalyzedAt || event.actual !== externalEvent.actual)) {
+        if (!isGenaiRateLimited() && (!event.aiAnalyzedAt || event.actual !== externalEvent.actual)) {
           try {
             const aiAnalysis = await analyzeEventRelevance({
               title: externalEvent.title,
@@ -300,17 +301,49 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
             } catch (volErr) {
               console.warn(`Volatility engine failed for ${externalEvent.title}`);
             }
+
+            // Generate structured analysis for SaaS dashboard
+            try {
+              const structuredAnalysis = await generateStructuredAnalysis({
+                title: externalEvent.title,
+                description: externalEvent.description,
+                currency: externalEvent.currency,
+                impact: externalEvent.impact,
+                previous: externalEvent.previous,
+                forecast: externalEvent.forecast,
+                actual: externalEvent.actual,
+                newsHeadline: '', // Will be populated later if news is fetched
+                newsSummary: '',
+              });
+
+              // Only save if not a fallback response
+              if (!(structuredAnalysis as any).isFallback) {
+                await Event.updateOne(
+                  { eventId: externalEvent.eventId },
+                  {
+                    $set: {
+                      anticipatedVolatility: structuredAnalysis.anticipatedVolatility,
+                      whatThisMeans: structuredAnalysis.whatThisMeans,
+                      marketImpact: structuredAnalysis.marketImpact,
+                      crossAssetImpact: structuredAnalysis.crossAssetImpact,
+                    },
+                  }
+                );
+              }
+            } catch (structuredErr) {
+              console.warn(`Structured analysis failed for ${externalEvent.title}`);
+            }
           } catch (aiError) {
             console.warn(`AI analysis failed for ${externalEvent.title}`);
           }
-        } else if (isGroqRateLimited()) {
-          console.warn('Groq rate limit active; skipping AI analysis this run');
+        } else if (isGenaiRateLimited()) {
+          console.warn('Genai rate limit active; skipping AI analysis this run');
         }
 
         // Fetch related news and generate short summary (fallback to description)
         let shortSummary = '';
-        if (isGroqRateLimited()) {
-          console.warn('Groq rate limit active; skipping AI summary this run');
+        if (isGenaiRateLimited()) {
+          console.warn('Genai rate limit active; skipping AI summary this run');
         } else {
           try {
             const news = await fetchNewsForEvent(externalEvent.title, externalEvent.currency, externalEvent.date);
@@ -343,8 +376,8 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
         }
 
         // In-depth analysis (medium length)
-        if (isGroqRateLimited()) {
-          console.warn('Groq rate limit active; skipping AI in-depth analysis this run');
+        if (isGenaiRateLimited()) {
+          console.warn('Genai rate limit active; skipping AI in-depth analysis this run');
         } else {
           try {
             const indepth = await generateInDepthAnalysis({
@@ -472,7 +505,7 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
         broadcastEventUpdate(event, 'update');
 
         // AI analysis if not rate limited
-        if (!isGroqRateLimited()) {
+        if (!isGenaiRateLimited()) {
           try {
             const aiAnalysis = await analyzeEventRelevance({
               title: externalEvent.title,
@@ -521,17 +554,49 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
             } catch (volErr) {
               console.warn(`Volatility engine failed for ${externalEvent.title}`);
             }
+
+            // Generate structured analysis for SaaS dashboard
+            try {
+              const structuredAnalysis = await generateStructuredAnalysis({
+                title: externalEvent.title,
+                description: externalEvent.description,
+                currency: externalEvent.currency,
+                impact: externalEvent.impact,
+                previous: externalEvent.previous,
+                forecast: externalEvent.forecast,
+                actual: externalEvent.actual,
+                newsHeadline: '', // Will be populated later if news is fetched
+                newsSummary: '',
+              });
+
+              // Only save if not a fallback response
+              if (!(structuredAnalysis as any).isFallback) {
+                await Event.updateOne(
+                  { eventId: externalEvent.eventId },
+                  {
+                    $set: {
+                      anticipatedVolatility: structuredAnalysis.anticipatedVolatility,
+                      whatThisMeans: structuredAnalysis.whatThisMeans,
+                      marketImpact: structuredAnalysis.marketImpact,
+                      crossAssetImpact: structuredAnalysis.crossAssetImpact,
+                    },
+                  }
+                );
+              }
+            } catch (structuredErr) {
+              console.warn(`Structured analysis failed for ${externalEvent.title}`);
+            }
           } catch (aiError) {
             console.warn(`AI analysis failed for ${externalEvent.title}`);
           }
         } else {
-          console.warn('Groq rate limit active; skipping AI analysis for this event');
+          console.warn('Genai rate limit active; skipping AI analysis for this event');
         }
 
         // News + summary
         let shortSummary = '';
-        if (isGroqRateLimited()) {
-          console.warn('Groq rate limit active; skipping AI summary this run');
+        if (isGenaiRateLimited()) {
+          console.warn('GenAI rate limit active; skipping AI summary this run');
         } else {
           try {
             const news = await fetchNewsForEvent(externalEvent.title, externalEvent.currency, externalEvent.date);
@@ -564,8 +629,8 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
         }
 
         // In-depth analysis
-        if (isGroqRateLimited()) {
-          console.warn('Groq rate limit active; skipping AI in-depth analysis this run');
+        if (isGenaiRateLimited()) {
+          console.warn('GenAI rate limit active; skipping AI in-depth analysis this run');
         } else {
           try {
             const indepth = await generateInDepthAnalysis({
@@ -714,6 +779,137 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
     }
   })
 
+  // Generate structured AI analysis for a single event (on-demand)
+  .post('/:eventId/generate-analysis', async ({ params, set }) => {
+    try {
+      const { eventId } = params;
+
+      // Try to consume a token - this checks and decrements rate limit
+      const tokenConsumed = await consumeGenaiToken();
+      if (!tokenConsumed) {
+        set.status = 429;
+        return {
+          statusCode: 429,
+          success: false,
+          message: 'AI service is temporarily rate limited. Please try again later.',
+          data: null,
+        };
+      }
+
+      // Find the event
+      let event = await Event.findOne({ eventId }).lean();
+      if (!event && Event.db?.base?.Types?.ObjectId?.isValid?.(eventId)) {
+        event = await Event.findById(eventId).lean();
+      }
+
+      if (!event) {
+        set.status = 404;
+        return {
+          statusCode: 404,
+          success: false,
+          message: 'Event not found',
+          data: null,
+        };
+      }
+
+      // Check if analysis already exists
+      if (event.whatThisMeans && event.marketImpact && event.crossAssetImpact) {
+        return {
+          statusCode: 200,
+          success: true,
+          message: 'Analysis already exists',
+          data: {
+            anticipatedVolatility: event.anticipatedVolatility,
+            whatThisMeans: event.whatThisMeans,
+            marketImpact: event.marketImpact,
+            crossAssetImpact: event.crossAssetImpact,
+          },
+        };
+      }
+
+      // Generate structured analysis
+      const analysis = await generateStructuredAnalysis({
+        title: event.eventName || (event as any).title,
+        description: event.description,
+        currency: event.currency,
+        impact: event.impact,
+        previous: event.previous,
+        forecast: event.forecast,
+        actual: event.actual,
+        newsHeadline: event.newsHeadline,
+        newsSummary: event.aiSummary,
+      });
+
+      // Don't save fallback data to DB - only save real AI analysis
+      if ((analysis as any).isFallback) {
+        return {
+          statusCode: 503,
+          success: false,
+          message: 'AI analysis temporarily unavailable, showing existing data',
+          data: {
+            anticipatedVolatility: event.anticipatedVolatility,
+            whatThisMeans: event.whatThisMeans || event.aiReasoning,
+            marketImpact: event.marketImpact || event.tradingRecommendation,
+            crossAssetImpact: event.crossAssetImpact || event.aiInDepthAnalysis,
+          },
+        };
+      }
+
+      // Update the event in database (only with real AI data)
+      const updateQuery = event.eventId ? { eventId: event.eventId } : { _id: event._id };
+      await Event.updateOne(updateQuery, {
+        $set: {
+          anticipatedVolatility: analysis.anticipatedVolatility,
+          whatThisMeans: analysis.whatThisMeans,
+          marketImpact: analysis.marketImpact,
+          crossAssetImpact: analysis.crossAssetImpact,
+        },
+      });
+
+      // Fetch updated event
+      const updatedEvent = await Event.findOne(updateQuery).lean();
+
+      return {
+        statusCode: 200,
+        success: true,
+        message: 'Structured analysis generated successfully',
+        data: updatedEvent,
+      };
+    } catch (error: any) {
+      console.error('Structured analysis generation failed:', error?.message || error?.code || error);
+      
+      // Handle rate limit error - return existing data without updating DB
+      if (error?.code === 'GENAI_RATE_LIMIT') {
+        set.status = 429;
+        const event = await Event.findOne(
+          params.eventId.includes('_') 
+            ? { eventId: params.eventId } 
+            : { _id: params.eventId }
+        ).lean();
+        
+        return {
+          statusCode: 429,
+          success: false,
+          message: 'AI rate limit reached. Try again in 60 seconds.',
+          data: event ? {
+            anticipatedVolatility: event.anticipatedVolatility,
+            whatThisMeans: event.whatThisMeans || event.aiReasoning,
+            marketImpact: event.marketImpact || event.tradingRecommendation,
+            crossAssetImpact: event.crossAssetImpact || event.aiInDepthAnalysis,
+          } : null,
+        };
+      }
+      
+      set.status = 500;
+      return {
+        statusCode: 500,
+        success: false,
+        message: 'Failed to generate analysis',
+        data: error.message,
+      };
+    }
+  })
+
   // Get available currencies
   .get('/meta/currencies', async () => {
     try {
@@ -752,6 +948,53 @@ export const calendarRoutes = new Elysia({ prefix: '/calendar' })
         success: false,
         message: 'Failed to fetch countries',
         data: error.message,
+      };
+    }
+  })
+
+  // Get GenAI rate limiter status
+  .get('/genai-status', async () => {
+    try {
+      const status = await getGenaiRateLimitStatus();
+
+      return {
+        statusCode: 200,
+        success: true,
+        message: 'GenAI rate limiter status retrieved',
+        data: {
+          remainingTokens: status.remainingTokens,
+          maxTokens: status.maxTokens,
+          isLimited: status.isLimited,
+          cooldownUntil: status.cooldownUntil,
+          cooldownRemainingMs: status.cooldownUntil ? Math.max(0, status.cooldownUntil - Date.now()) : null,
+        },
+      };
+    } catch (error: any) {
+      return {
+        statusCode: 500,
+        success: false,
+        message: 'Failed to fetch GenAI rate limiter status',
+        data: error.message,
+      };
+    }
+  })
+
+  // Get available GenAI models (useful when a model is not found)
+  .get('/genai-models', async () => {
+    try {
+      const models = await listGenaiModels();
+      return {
+        statusCode: 200,
+        success: true,
+        message: 'GenAI models retrieved',
+        data: models,
+      };
+    } catch (error: any) {
+      return {
+        statusCode: 500,
+        success: false,
+        message: 'Failed to fetch GenAI models',
+        data: (error as any)?.message || error,
       };
     }
   });

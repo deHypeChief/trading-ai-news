@@ -1,6 +1,6 @@
 const { fetchEconomicEvents } = require('../src/services/calendar');
 const { Event } = require('../src/models/Event');
-const { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGroqRateLimited } = require('../src/services/groq');
+const { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGenaiRateLimited } = require('../src/services/genai');
 const { runVolatilityEngine } = require('../src/services/volatilityEngine');
 const { fetchNewsForEvent } = require('../src/services/news');
 
@@ -19,7 +19,7 @@ async function performQuarterlySync() {
     console.log(`✅ Fetched ${externalEvents.length} events`);
 
     let analyzedCount = 0;
-    let groqLimited = false;
+    let genaiLimited = false;
 
     for (const externalEvent of externalEvents) {
       // Upsert event
@@ -43,7 +43,7 @@ async function performQuarterlySync() {
       );
 
       // AI analysis if not done
-      if (!groqLimited && !isGroqRateLimited() && !event.aiAnalyzedAt) {
+      if (!genaiLimited && !isGenaiRateLimited() && !event.aiAnalyzedAt) {
         try {
           const aiAnalysis = await analyzeEventRelevance({
             title: externalEvent.title,
@@ -70,9 +70,9 @@ async function performQuarterlySync() {
           analyzedCount++;
           console.log(`AI analyzed: ${externalEvent.title}`);
         } catch (err) {
-          if ((err as any)?.code === 'GROQ_RATE_LIMIT') {
-            groqLimited = true;
-            console.warn('Groq rate limit reached');
+          if ((err as any)?.code === 'GENAI_RATE_LIMIT') {
+            genaiLimited = true;
+            console.warn('GenAI rate limit reached');
           } else {
             console.warn(`AI analysis failed for ${externalEvent.title}:`, err.message);
           }

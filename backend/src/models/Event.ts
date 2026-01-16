@@ -37,6 +37,12 @@ interface IEvent {
   aiAnalyzedAt?: Date;
   aiInDepthAnalysis?: string;
 
+  // Structured Analysis for SaaS Dashboard
+  anticipatedVolatility?: number; // 1-10 scale based on DXY impact
+  whatThisMeans?: string; // 2-sentence explanation
+  marketImpact?: string; // currency-specific direction/reason
+  crossAssetImpact?: string; // paragraph on majors/gold/stocks
+
   // News & Summaries
   aiSummary?: string;
   newsHeadline?: string;
@@ -149,6 +155,25 @@ const eventSchema = new mongoose.Schema<IEvent>(
     aiInDepthAnalysis: {
       type: String,
       maxlength: 1600,
+    },
+
+    // Structured Analysis for SaaS Dashboard
+    anticipatedVolatility: {
+      type: Number,
+      min: 1,
+      max: 10,
+    },
+    whatThisMeans: {
+      type: String,
+      maxlength: 500,
+    },
+    marketImpact: {
+      type: String,
+      maxlength: 800,
+    },
+    crossAssetImpact: {
+      type: String,
+      maxlength: 1000,
     },
 
     // News & Summaries

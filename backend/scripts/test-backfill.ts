@@ -4,7 +4,7 @@
  * 
  * Tests the backfill system with a small sample:
  * - Queue initialization and job management
- * - Groq rate limiter functionality
+ * - Genai rate limiter functionality
  * - Synthetic data generation
  * - Worker integration
  */
@@ -87,53 +87,53 @@ async function runTests() {
     test('Queue service', false, err.message);
   }
 
-  // Test 2: Groq Rate Limiter
-  console.log('\n🚦 Testing Groq Rate Limiter...');
+  // Test 2: GenAI Rate Limiter
+  console.log('\n🚦 Testing GenAI Rate Limiter...');
   try {
     const { 
-      isGroqRateLimited, 
-      getGroqRateLimitStatus, 
-      consumeGroqToken,
-      setGroqCooldown,
-      clearGroqCooldown,
-      resetGroqRateLimiter 
-    } = await import('../src/services/groqRateLimiter');
+      isGenaiRateLimited, 
+      getGenaiRateLimitStatus, 
+      consumeGenaiToken,
+      setGenaiCooldown,
+      clearGenaiCooldown,
+      resetGenaiRateLimiter 
+    } = await import('../src/services/genaiRateLimiter');
     
     // Reset first
-    await resetGroqRateLimiter();
+    await resetGenaiRateLimiter();
     
     // Check initial state
-    const initialStatus = await getGroqRateLimitStatus();
+    const initialStatus = await getGenaiRateLimitStatus();
     test('Rate limiter initial state', 
       initialStatus.remainingTokens > 0 && !initialStatus.isLimited,
       `Tokens: ${initialStatus.remainingTokens}/${initialStatus.maxTokens}`
     );
     
     // Consume a token
-    const consumed = await consumeGroqToken();
+    const consumed = await consumeGenaiToken();
     test('Token consumption', consumed === true);
     
     // Check status after consumption
-    const afterConsume = await getGroqRateLimitStatus();
+    const afterConsume = await getGenaiRateLimitStatus();
     test('Token count decremented', 
       afterConsume.remainingTokens < initialStatus.remainingTokens ||
       afterConsume.remainingTokens === initialStatus.maxTokens - 1
     );
     
     // Test cooldown
-    await setGroqCooldown(2000); // 2 second cooldown
-    const duringCooldown = await isGroqRateLimited();
+    await setGenaiCooldown(2000); // 2 second cooldown
+    const duringCooldown = await isGenaiRateLimited();
     test('Cooldown activation', duringCooldown === true);
     
-    await clearGroqCooldown();
-    const afterClear = await isGroqRateLimited();
+    await clearGenaiCooldown();
+    const afterClear = await isGenaiRateLimited();
     test('Cooldown cleared', afterClear === false);
     
     // Reset for production
-    await resetGroqRateLimiter();
+    await resetGenaiRateLimiter();
     test('Rate limiter reset', true);
   } catch (err: any) {
-    test('Groq rate limiter', false, err.message);
+    test('Genai rate limiter', false, err.message);
   }
 
   // Test 3: Historical Data Generation

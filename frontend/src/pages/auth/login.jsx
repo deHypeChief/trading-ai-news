@@ -188,7 +188,7 @@ export default function LoginPage() {
                   Remember me
                 </label>
               </div>
-              <Link to="/forgot-password" className="text-sm text-[#FF0000] font-medium">
+              <Link to="/forgot-password" className="text-sm text-[#1c6eff] font-medium">
                 Forgot password?
               </Link>
             </div>
@@ -197,7 +197,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-6 bg-[#FF0000] text-white py-3 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed font-medium text-lg"
+              className="w-full mt-6 bg-[#1c6eff] text-white py-3 px-4 rounded-md disabled:opacity-50 disabled:cursor-not-allowed font-medium text-lg"
             >
               {loading ? 'Logging in...' : 'Log In'}
             </button>
@@ -228,7 +228,7 @@ export default function LoginPage() {
           <div className="mt-6 text-center">
             <p className="text-gray-600">
               Don't have an account?{' '}
-              <Link to="/signup" className="text-[#FF0000] font-medium hover:underline">
+              <Link to="/signup" className="text-[#1c6eff] font-medium hover:underline">
                 Create one
               </Link>
             </p>

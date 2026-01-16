@@ -22,7 +22,7 @@ function Navbar() {
                         <Button className="rounded-full px-3 py-2 text-sm" variant="outline">Login</Button>
                     </Link>
                     <Link to="/signup">
-                        <Button className="rounded-full bg-[#FF0000] px-3 py-2 text-sm">Create Account</Button>
+                        <Button className="rounded-full bg-[#1c6eff] px-3 py-2 text-sm">Create Account</Button>
                     </Link>
                 </div>
             </div>
@@ -135,7 +135,7 @@ function Pricing() {
                             <span className="text-5xl font-bold">$1</span>
                             <span className="text-gray-600">/month</span>
                         </div>
-                        <Button className="w-full rounded-full mb-6 bg-[#FF0000]">Start Free Trial</Button>
+                        <Button className="w-full rounded-full mb-6 bg-[#1c6eff]">Start Free Trial</Button>
                         <div className="space-y-3">
                             <div className="flex gap-3 items-center">
                                 <CheckCircle2 className="h-5 w-5 text-green-600" />
@@ -157,7 +157,7 @@ function Pricing() {
                     </div>
 
                     {/* Yearly */}
-                    <div className="bg-[#FF0000] text-white p-8 rounded-lg  relative">
+                    <div className="bg-[#1c6eff] text-white p-8 rounded-lg  relative">
                         <div className="absolute -top-4 left-4 bg-green-500 px-3 py-1 rounded-full text-sm font-semibold">
                             Save 42%
                         </div>
@@ -212,7 +212,7 @@ export default function LandingPage() {
                         </p>
                         <div className="pt-6 flex flex-col sm:flex-row gap-4 sm:gap-6">
                             <Link to="/signup" className="w-full sm:w-auto">
-                                <Button className="rounded-full py-3 sm:py-4 px-6 sm:px-8 text-base sm:text-lg w-full sm:w-auto bg-[#FF0000]">
+                                <Button className="rounded-full py-3 sm:py-4 px-6 sm:px-8 text-base sm:text-lg w-full sm:w-auto bg-[#1c6eff]">
                                     Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
                                 </Button>
                             </Link>

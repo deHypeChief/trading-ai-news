@@ -4,7 +4,7 @@
  * Historical Backfill CLI
  * 
  * Efficient 7-year backfill script using BullMQ for job queuing,
- * Redis-based rate limiting for Groq, and newest-first processing.
+ * Redis-based rate limiting for Genai, and newest-first processing.
  * 
  * Usage:
  *   node scripts/historical-backfill.js [command] [options]
@@ -144,9 +144,9 @@ async function runBackfill(options) {
   } = require('../src/services/backfillWorkers');
   
   const {
-    getGroqRateLimitStatus,
-    resetGroqRateLimiter,
-  } = require('../src/services/groqRateLimiter');
+    getGenaiRateLimitStatus,
+    resetGenaiRateLimiter,
+  } = require('../src/services/genaiRateLimiter');
   
   const { Event } = require('../src/models/Event');
   
@@ -169,8 +169,8 @@ async function runBackfill(options) {
     console.log(`  - Estimated ${ranges.length * 30} events (avg 30/week)`);
     console.log(`  - Estimated AI calls: ${ranges.length * 30 * 4} (4 per event)`);
     
-    const groqRpm = parseInt(process.env.GROQ_RPM_LIMIT || '80', 10);
-    const estimatedMinutes = (ranges.length * 30 * 4) / groqRpm;
+    const genaiRpm = parseInt(process.env.GENAI_RPM_LIMIT || '30', 10);
+    const estimatedMinutes = (ranges.length * 30 * 4) / genaiRpm;
     console.log(`  - Estimated time: ${formatDuration(estimatedMinutes * 60 * 1000)}`);
     return;
   }
@@ -186,7 +186,7 @@ async function runBackfill(options) {
   });
   
   // Reset rate limiter for fresh start
-  await resetGroqRateLimiter();
+  await resetGenaiRateLimiter();
   
   // Queue import jobs (newest first)
   console.log('\n📥 Queueing import jobs...');
@@ -213,7 +213,7 @@ async function runBackfill(options) {
     try {
       const queueStats = await getQueueStats();
       const workerStats = getWorkerStats();
-      const rateLimitStatus = await getGroqRateLimitStatus();
+      const rateLimitStatus = await getGenaiRateLimitStatus();
       
       const totalEvents = await Event.countDocuments();
       const enrichedEvents = await Event.countDocuments({ aiAnalyzedAt: { $exists: true } });
@@ -258,8 +258,8 @@ async function runBackfill(options) {
       console.log(`  Enriched: ${enrichedEvents} (${Math.round((enrichedEvents / totalEvents) * 100) || 0}%)`);
       console.log('');
       
-      // Groq rate limit
-      console.log('🤖 Groq Rate Limit:');
+      // Genai rate limit
+      console.log('🤖 Genai Rate Limit:');
       console.log(`  Tokens: ${rateLimitStatus.remainingTokens}/${rateLimitStatus.maxTokens}`);
       console.log(`  Status: ${rateLimitStatus.isLimited ? '🔴 LIMITED' : '🟢 OK'}`);
       if (rateLimitStatus.cooldownUntil) {
@@ -314,13 +314,13 @@ async function runBackfill(options) {
 // Status command
 async function showStatus() {
   const { initQueues, getQueueStats, closeQueues } = require('../src/services/queue');
-  const { getGroqRateLimitStatus } = require('../src/services/groqRateLimiter');
+  const { getGenaiRateLimitStatus } = require('../src/services/genaiRateLimiter');
   const { Event } = require('../src/models/Event');
   
   await initQueues();
   
   const queueStats = await getQueueStats();
-  const rateLimitStatus = await getGroqRateLimitStatus();
+  const rateLimitStatus = await getGenaiRateLimitStatus();
   
   const totalEvents = await Event.countDocuments();
   const enrichedEvents = await Event.countDocuments({ aiAnalyzedAt: { $exists: true } });
@@ -345,7 +345,7 @@ async function showStatus() {
     console.log(`    Completed: ${stats.completed} | Failed: ${stats.failed}`);
   }
   
-  console.log('\n🤖 Groq Rate Limit:');
+  console.log('\n🤖 Genai Rate Limit:');
   console.log(`  Tokens: ${rateLimitStatus.remainingTokens}/${rateLimitStatus.maxTokens}`);
   console.log(`  Status: ${rateLimitStatus.isLimited ? '🔴 LIMITED' : '🟢 OK'}`);
   

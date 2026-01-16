@@ -1,6 +1,6 @@
 import { Event } from '../models/Event';
 import { fetchEconomicEvents } from './calendar';
-import { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, isGroqRateLimited } from './groq';
+import { analyzeEventRelevance, summarizeTextShort, generateInDepthAnalysis, generateStructuredAnalysis, isGenaiRateLimited } from './genai';
 import { runVolatilityEngine } from './volatilityEngine';
 import { fetchNewsForEvent } from './news';
 import { broadcastEventUpdate } from './websocket';
@@ -37,7 +37,7 @@ async function performCalendarSync(days = 3) {
   let analyzedCount = 0;
   let summarizedCount = 0;
   let indepthCount = 0;
-  let groqLimited = false;
+  let genaiLimited = false;
 
   for (const externalEvent of externalEvents) {
     // Upsert event
@@ -65,7 +65,7 @@ async function performCalendarSync(days = 3) {
     debugConsole.debug('CalendarSync', `Synced event: ${externalEvent.title}`);
 
     // AI analysis if missing or updated
-    if (!groqLimited && !isGroqRateLimited() && (!event.aiAnalyzedAt || event.actual !== externalEvent.actual)) {
+    if (!genaiLimited && !isGenaiRateLimited() && (!event.aiAnalyzedAt || event.actual !== externalEvent.actual)) {
       try {
         const aiAnalysis = await analyzeEventRelevance({
           title: externalEvent.title,
@@ -92,10 +92,10 @@ async function performCalendarSync(days = 3) {
         analyzedCount++;
         debugConsole.debug('CalendarSync', `AI analysis completed for ${externalEvent.title}`);
       } catch (err) {
-        if ((err as any)?.code === 'GROQ_RATE_LIMIT') {
-          groqLimited = true;
-          console.warn('[Calendar Sync] Groq rate limit reached; skipping remaining AI work this run');
-          debugConsole.warn('CalendarSync', 'Groq rate limit reached');
+        if ((err as any)?.code === 'GENAI_RATE_LIMIT') {
+          genaiLimited = true;
+          console.warn('[Calendar Sync] GenAI rate limit reached; skipping remaining AI work this run');
+          debugConsole.warn('CalendarSync', 'GenAI rate limit reached');
         } else {
           console.warn(`[Calendar Sync] AI analysis failed for ${externalEvent.title}`);
           debugConsole.error('CalendarSync', `AI analysis failed for ${externalEvent.title}`, err);
@@ -104,7 +104,7 @@ async function performCalendarSync(days = 3) {
     }
 
     // Volatility analysis (structured engine)
-    if (!groqLimited && !isGroqRateLimited()) {
+    if (!genaiLimited && !isGenaiRateLimited()) {
       try {
         const regime = process.env.CURRENT_MARKET_REGIME as any;
         const vol = await runVolatilityEngine(externalEvent, regime);
@@ -125,9 +125,9 @@ async function performCalendarSync(days = 3) {
         });
         debugConsole.debug('CalendarSync', `Volatility analysis updated for ${externalEvent.title}`);
       } catch (err) {
-        if ((err as any)?.code === 'GROQ_RATE_LIMIT') {
-          groqLimited = true;
-          console.warn('[Calendar Sync] Groq rate limit reached; skipping volatility this run');
+        if ((err as any)?.code === 'GENAI_RATE_LIMIT') {
+          genaiLimited = true;
+          console.warn('[Calendar Sync] GenAI rate limit reached; skipping volatility this run');
         } else {
           console.warn(`[Calendar Sync] Volatility engine failed for ${externalEvent.title}`);
           debugConsole.error('CalendarSync', `Volatility engine failed for ${externalEvent.title}`, err);
@@ -135,9 +135,52 @@ async function performCalendarSync(days = 3) {
       }
     }
 
+    // Structured analysis for SaaS dashboard
+    if (!genaiLimited && !isGenaiRateLimited()) {
+      try {
+        const structuredAnalysis = await generateStructuredAnalysis({
+          title: externalEvent.title,
+          description: externalEvent.description,
+          currency: externalEvent.currency,
+          impact: externalEvent.impact,
+          previous: externalEvent.previous,
+          forecast: externalEvent.forecast,
+          actual: externalEvent.actual,
+          newsHeadline: '', // Will be populated later if news is fetched
+          newsSummary: '',
+        });
+
+        // Only save if not a fallback response
+        if (!(structuredAnalysis as any).isFallback) {
+          await Event.updateOne(
+            { eventId: externalEvent.eventId },
+            {
+              $set: {
+                anticipatedVolatility: structuredAnalysis.anticipatedVolatility,
+                whatThisMeans: structuredAnalysis.whatThisMeans,
+                marketImpact: structuredAnalysis.marketImpact,
+                crossAssetImpact: structuredAnalysis.crossAssetImpact,
+              },
+            }
+          );
+          debugConsole.debug('CalendarSync', `Structured analysis updated for ${externalEvent.title}`);
+        } else {
+          console.warn(`[Calendar Sync] Skipping fallback structured analysis for ${externalEvent.title}`);
+        }
+      } catch (err) {
+        if ((err as any)?.code === 'GENAI_RATE_LIMIT') {
+          genaiLimited = true;
+          console.warn('[Calendar Sync] GenAI rate limit reached; skipping structured analysis this run');
+        } else {
+          console.warn(`[Calendar Sync] Structured analysis failed for ${externalEvent.title}`);
+          debugConsole.error('CalendarSync', `Structured analysis failed for ${externalEvent.title}`, err);
+        }
+      }
+    }
+
     // News + summary (with fallback to description)
     let shortSummary = '';
-    if (!groqLimited && !isGroqRateLimited()) {
+    if (!genaiLimited && !isGenaiRateLimited()) {
       try {
         const news = await fetchNewsForEvent(externalEvent.title, externalEvent.currency, externalEvent.date);
         if (news) {
@@ -166,10 +209,10 @@ async function performCalendarSync(days = 3) {
           debugConsole.debug('CalendarSync', `Summarized description for ${externalEvent.title}`);
         }
       } catch (err) {
-        if ((err as any)?.code === 'GROQ_RATE_LIMIT') {
-          groqLimited = true;
-          console.warn('[Calendar Sync] Groq rate limit reached; skipping remaining AI work this run');
-          debugConsole.warn('CalendarSync', 'Groq rate limit reached during news/summarize');
+        if ((err as any)?.code === 'GENAI_RATE_LIMIT') {
+          genaiLimited = true;
+          console.warn('[Calendar Sync] GenAI rate limit reached; skipping remaining AI work this run');
+          debugConsole.warn('CalendarSync', 'GenAI rate limit reached during news/summarize');
         } else {
           console.warn(`[Calendar Sync] News/summarize failed for ${externalEvent.title}`);
           debugConsole.error('CalendarSync', `News/summarize failed for ${externalEvent.title}`, err);
@@ -178,7 +221,7 @@ async function performCalendarSync(days = 3) {
     }
 
     // In-depth analysis
-    if (!groqLimited && !isGroqRateLimited()) {
+    if (!genaiLimited && !isGenaiRateLimited()) {
       try {
         const indepth = await generateInDepthAnalysis({
           title: externalEvent.title,
@@ -197,10 +240,10 @@ async function performCalendarSync(days = 3) {
           debugConsole.debug('CalendarSync', `In-depth analysis completed for ${externalEvent.title}`);
         }
       } catch (err) {
-        if ((err as any)?.code === 'GROQ_RATE_LIMIT') {
-          groqLimited = true;
-          console.warn('[Calendar Sync] Groq rate limit reached; skipping remaining AI work this run');
-          debugConsole.warn('CalendarSync', 'Groq rate limit reached during in-depth analysis');
+        if ((err as any)?.code === 'GENAI_RATE_LIMIT') {
+          genaiLimited = true;
+          console.warn('[Calendar Sync] GenAI rate limit reached; skipping remaining AI work this run');
+          debugConsole.warn('CalendarSync', 'GenAI rate limit reached during in-depth analysis');
         } else {
           console.warn(`[Calendar Sync] In-depth analysis failed for ${externalEvent.title}`);
           debugConsole.error('CalendarSync', `In-depth analysis failed for ${externalEvent.title}`, err);
@@ -366,7 +409,7 @@ export async function performBackfillRun(days = syncDays, opts: { force?: boolea
       broadcastEventUpdate(event, 'update');
 
       // AI analysis
-      if (!isGroqRateLimited()) {
+      if (!isGenaiRateLimited()) {
         try {
           const aiAnalysis = await analyzeEventRelevance({
             title: externalEvent.title,
@@ -408,6 +451,38 @@ export async function performBackfillRun(days = syncDays, opts: { force?: boolea
           } catch (volErr) {
             console.warn(`[Backfill] Volatility engine failed for ${externalEvent.title}`);
           }
+
+          // Structured analysis for SaaS dashboard
+          try {
+            const structuredAnalysis = await generateStructuredAnalysis({
+              title: externalEvent.title,
+              description: externalEvent.description,
+              currency: externalEvent.currency,
+              impact: externalEvent.impact,
+              previous: externalEvent.previous,
+              forecast: externalEvent.forecast,
+              actual: externalEvent.actual,
+              newsHeadline: '', // Will be populated later if news is fetched
+              newsSummary: '',
+            });
+
+            // Only save if not a fallback response
+            if (!(structuredAnalysis as any).isFallback) {
+              await Event.updateOne(
+                { eventId: externalEvent.eventId },
+                {
+                  $set: {
+                    anticipatedVolatility: structuredAnalysis.anticipatedVolatility,
+                    whatThisMeans: structuredAnalysis.whatThisMeans,
+                    marketImpact: structuredAnalysis.marketImpact,
+                    crossAssetImpact: structuredAnalysis.crossAssetImpact,
+                  },
+                }
+              );
+            }
+          } catch (structuredErr) {
+            console.warn(`[Backfill] Structured analysis failed for ${externalEvent.title}`);
+          }
         } catch (aiError) {
           console.warn(`[Backfill] AI analysis failed for ${externalEvent.title}`);
         }
@@ -415,7 +490,7 @@ export async function performBackfillRun(days = syncDays, opts: { force?: boolea
 
       // News + summary
       let shortSummary = '';
-      if (!isGroqRateLimited()) {
+      if (!isGenaiRateLimited()) {
         try {
           const news = await fetchNewsForEvent(externalEvent.title, externalEvent.currency, externalEvent.date);
           if (news) {
@@ -442,7 +517,7 @@ export async function performBackfillRun(days = syncDays, opts: { force?: boolea
       }
 
       // In-depth
-      if (!isGroqRateLimited()) {
+      if (!isGenaiRateLimited()) {
         try {
           const indepth = await generateInDepthAnalysis({
             title: externalEvent.title,

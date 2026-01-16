@@ -19,6 +19,7 @@ import { rateLimiter } from './middleware/rateLimiter'
 import { startAlertScheduler, stopAlertScheduler } from './services/alertScheduler'
 import { startCalendarSyncScheduler, stopCalendarSyncScheduler } from './services/calendarSync'
 import { allowedOrigins } from './config/cors.config'
+import { GoogleGenAI } from '@google/genai'
 
 
 const app = new Elysia()

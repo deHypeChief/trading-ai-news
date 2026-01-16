@@ -185,7 +185,66 @@ export default function Dashboard() {
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
 	const [showFilters, setShowFilters] = useState(false);
 
+	// AI Analysis generation state
+	const [analysisLoading, setAnalysisLoading] = useState({}); // { [eventId]: boolean }
+	const [analysisFailed, setAnalysisFailed] = useState({}); // { [eventId]: boolean }
+
 	const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+	// Function to generate AI analysis for an event
+	const generateAnalysis = async (event) => {
+		const eventIdentifier = event.eventId || event._id;
+		
+		// Skip if already loading
+		if (analysisLoading[eventIdentifier]) return;
+		
+		// Skip if already has analysis
+		if (event.whatThisMeans && event.marketImpact && event.crossAssetImpact) return;
+
+		setAnalysisLoading(prev => ({ ...prev, [eventIdentifier]: true }));
+		setAnalysisFailed(prev => ({ ...prev, [eventIdentifier]: false }));
+
+		try {
+			const res = await fetch(`${API_URL}/api/calendar/${encodeURIComponent(eventIdentifier)}/generate-analysis`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+			});
+			const data = await res.json();
+
+			if (data.success && data.data) {
+				// Update the event in todayEvents state
+				setTodayEvents(prev => prev.map(e => 
+					(e.eventId === eventIdentifier || e._id === eventIdentifier) 
+						? { ...e, ...data.data }
+						: e
+				));
+				setAnalysisFailed(prev => ({ ...prev, [eventIdentifier]: false }));
+			} else {
+				// Rate limited or other error
+				setAnalysisFailed(prev => ({ ...prev, [eventIdentifier]: true }));
+			}
+		} catch (err) {
+			console.error('Failed to generate analysis:', err);
+			setAnalysisFailed(prev => ({ ...prev, [eventIdentifier]: true }));
+		} finally {
+			setAnalysisLoading(prev => ({ ...prev, [eventIdentifier]: false }));
+		}
+	};
+
+	// Handle row expansion with auto-generate
+	const handleRowExpand = (event) => {
+		const isCurrentlyExpanded = expandedEventId === event._id;
+		
+		if (isCurrentlyExpanded) {
+			setExpandedEventId(null);
+		} else {
+			setExpandedEventId(event._id);
+			// Auto-generate analysis if missing
+			if (!event.whatThisMeans || !event.marketImpact || !event.crossAssetImpact) {
+				generateAnalysis(event);
+			}
+		}
+	};
 
 	useEffect(() => {
 		const timer = setInterval(() => setNow(new Date()), 1000);
@@ -377,9 +436,11 @@ export default function Dashboard() {
 	const dayColor = (key) => {
 		const bucket = dayBuckets[key];
 		if (!bucket) return 'bg-gray-50 text-gray-400';
-		if (bucket.low >= bucket.high && bucket.low >= bucket.medium) return 'bg-yellow-100 text-yellow-700 border border-yellow-200';
-		if (bucket.medium >= bucket.high) return 'bg-orange-100 text-orange-700 border border-orange-200';
-		return 'bg-red-100 text-red-700 border border-red-200';
+		// Priority: High (red) > Medium (orange) > Low (yellow)
+		if (bucket.high > 0) return 'bg-red-100 text-red-700 border border-red-200';
+		if (bucket.medium > 0) return 'bg-orange-100 text-orange-700 border border-orange-200';
+		if (bucket.low > 0) return 'bg-yellow-100 text-yellow-700 border border-yellow-200';
+		return 'bg-gray-50 text-gray-400';
 	};
 
 	// Date/time format helpers (hoisted before use to avoid temporal dead zone)
@@ -1157,7 +1218,7 @@ export default function Dashboard() {
 														setSelectedCountry(countryStr);
 														setShowFilters(false);
 													}}
-													className="px-4 py-2 bg-[#FF0000] text-white text-sm rounded-lg font-medium  transition-all shadow-sm hover:shadow-md"
+													className="px-4 py-2 bg-[#1c6eff] text-white text-sm rounded-lg font-medium  transition-all shadow-sm hover:shadow-md"
 												>
 													Apply Filter
 												</button>
@@ -1217,12 +1278,15 @@ export default function Dashboard() {
 														</tr>
 														{dayEvents.map((event) => {
 															const isExpanded = expandedEventId === event._id;
+															const eventIdentifier = event.eventId || event._id;
+															const isLoadingAnalysis = analysisLoading[eventIdentifier];
+															const hasAnalysisFailed = analysisFailed[eventIdentifier];
 															return (
 																<>
 																	<tr
 																		key={event._id}
 																		className="hover:bg-gray-50 cursor-pointer"
-																		onClick={() => setExpandedEventId(isExpanded ? null : event._id)}
+																		onClick={() => handleRowExpand(event)}
 																	>
 																		<td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-800">
 																			<div className="text-xs text-gray-600">{formatTime(event.eventDateTime)}</div>
@@ -1232,7 +1296,7 @@ export default function Dashboard() {
 																				<span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
 																					{event.country}
 																				</span>
-																				{event.volatilityScore ? (
+																				{/* {event.volatilityScore ? (
 																					<div className="flex items-center gap-0.5">
 																						{[1, 2, 3, 4, 5].map((bar) => (
 																							<div
@@ -1248,8 +1312,8 @@ export default function Dashboard() {
 																							/>
 																						))}
 																					</div>
-																				) : null}
-																				<span className="font-semibold text-gray-900 text-sm sm:text-base">{event.eventName}</span>
+																				) : null} */}
+																				<span className="font-semibold text-gray-900 text-xs sm:text-sm">{event.eventName}</span>
 																				{(event.pipRange || event.expectedPipRange) ? (
 																					<HoverCard>
 																						<HoverCardTrigger>
@@ -1285,25 +1349,102 @@ export default function Dashboard() {
 																	{isExpanded && (
 																		<tr className="bg-white" key={`${event._id}-expanded`}>
 																			<td colSpan={6} className="px-2 sm:px-4 py-4">
-																				<div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 space-y-3">
-																					{event.aiSummary ? (
+																				<div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 space-y-4">
+																					{/* AI Structured Analysis */}
+																					{isLoadingAnalysis ? (
+																						<div className="flex items-center justify-center py-8">
+																							<div className="flex items-center gap-3">
+																								<div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+																								<span className="text-gray-600">Generating AI analysis...</span>
+																							</div>
+																						</div>
+																					) : event.whatThisMeans && event.marketImpact && event.crossAssetImpact ? (
+																						<>
+																							{/* What This Means */}
+																							<div>
+																								<h4 className="font-semibold text-gray-900 mb-2 text-sm uppercase tracking-wide">What This Means</h4>
+																								<p className="text-gray-700 leading-relaxed">{event.whatThisMeans}</p>
+																							</div>
+
+																							{/* Market Impact */}
+																							<div>
+																								<h4 className="font-semibold text-gray-900 mb-2 text-sm uppercase tracking-wide">Market Impact</h4>
+																								<p className="text-gray-700 leading-relaxed">{event.marketImpact}</p>
+																							</div>
+
+																							{/* Cross-Asset Impact */}
+																							<div>
+																								<h4 className="font-semibold text-gray-900 mb-2 text-sm uppercase tracking-wide">Cross-Asset Impact</h4>
+																								<p className="text-gray-700 leading-relaxed">{event.crossAssetImpact}</p>
+																							</div>
+
+																							{/* Anticipated Volatility */}
+																							{event.anticipatedVolatility && (
+																								<div className="flex items-center gap-2 pt-2 border-t border-gray-200">
+																									<span className="text-gray-500 text-sm">Anticipated Volatility:</span>
+																									<div className="flex items-center gap-1">
+																										{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
+																											<div
+																												key={level}
+																												className={`w-2 h-4 rounded-sm ${level <= event.anticipatedVolatility
+																													? event.anticipatedVolatility <= 3 ? 'bg-green-500' :
+																														event.anticipatedVolatility <= 5 ? 'bg-yellow-500' :
+																															event.anticipatedVolatility <= 7 ? 'bg-orange-500' :
+																																'bg-red-500'
+																													: 'bg-gray-200'
+																												}`}
+																											/>
+																										))}
+																									</div>
+																									<span className="text-sm font-medium">{event.anticipatedVolatility}/10</span>
+																								</div>
+																							)}
+																						</>
+																					) : hasAnalysisFailed ? (
+																						<div className="text- py-2">
+																							<p className="text-gray-600 mb-3">
+																								{event.aiSummary ? (
+																									<>
+																										<span className="font-medium text-gray-900 block mb-2">AI Summary (Fallback)</span>
+																										{event.aiSummary}
+																									</>
+																								) : (
+																									'AI analysis temporarily unavailable due to rate limiting.'
+																								)}
+																							</p>
+																							<Button
+																								size="sm"
+																								variant="outline"
+																								onClick={(e) => {
+																									e.stopPropagation();
+																									generateAnalysis(event);
+																								}}
+																							>
+																								Retry Analysis
+																							</Button>
+																						</div>
+																					) : event.aiSummary ? (
 																						<div>
 																							<p className="font-semibold text-gray-900 mb-1">AI Summary</p>
 																							<p className="text-gray-700 leading-relaxed">{event.aiSummary}</p>
 																						</div>
 																					) : (
-																						<p className="text-gray-600">No AI summary yet for this event.</p>
+																						<p className="text-gray-600">No AI analysis available for this event.</p>
 																					)}
-																					{(event.newsHeadline || event.newsSource) && (
-																						<div className="text-xs text-gray-600">
+																					
+																					{/* News section */}
+																					{/* {(event.newsHeadline || event.newsSource) && (
+																						<div className="text-xs text-gray-600 pt-3 border-t border-gray-200">
 																							{event.newsHeadline && <p className="font-medium text-gray-900 text-sm">{event.newsHeadline}</p>}
 																							{event.newsSource && (
 																								<p>Source: {event.newsSource}{event.newsPublishedAt ? ` • ${formatDateTime(event.newsPublishedAt)}` : ''}</p>
 																							)}
 																						</div>
 																					)}
-																					{(event.previous || event.forecast || event.actual) && (
-																						<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+																					 */}
+																					{/* Data points */}
+																					{/* {(event.previous || event.forecast || event.actual) && (
+																						<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm pt-3 border-t border-gray-200">
 																							{event.previous && (
 																								<div>
 																									<span className="text-gray-500">Previous:</span>
@@ -1323,11 +1464,11 @@ export default function Dashboard() {
 																								</div>
 																							)}
 																						</div>
-																					)}
+																					)} */}
+																					
 																					{/* Volatility details */}
-																					<div className="mt-3 border-t pt-3">
-																						<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-2">
-
+																					{/* <div className="pt-3 border-t border-gray-200">
+																						<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
 																							<div>
 																								<span className="text-gray-500">Pip Range:</span>
 																								<span className="ml-2 font-medium">
@@ -1354,8 +1495,8 @@ export default function Dashboard() {
 																						{event.executionNotes && (
 																							<p className="mt-2 text-sm">Execution: <span className="font-medium">{event.executionNotes}</span></p>
 																						)}
-																						<Button size="sm" onClick={() => setSelectedEvent(event)} className="mt-5">View more</Button>
-																					</div>
+																						<Button size="sm" onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); }} className="mt-5">View more</Button>
+																					</div> */}
 																				</div>
 																			</td>
 																		</tr>
@@ -1534,7 +1675,36 @@ export default function Dashboard() {
 												{selectedEvent.volatilityPrediction} Volatility
 											</span>
 										)}
+										{selectedEvent.anticipatedVolatility && (
+											<span className="px-3 py-1 rounded text-sm font-medium bg-purple-100 text-purple-800 border border-purple-200">
+												DXY Impact: {selectedEvent.anticipatedVolatility}/10
+											</span>
+										)}
 									</div>
+
+									{/* Structured AI Analysis */}
+									{(selectedEvent.whatThisMeans || selectedEvent.marketImpact || selectedEvent.crossAssetImpact) && (
+										<div className="border-t pt-4 space-y-4">
+											{selectedEvent.whatThisMeans && (
+												<div>
+													<h3 className="font-semibold mb-2 text-sm uppercase tracking-wide text-gray-900">What This Means</h3>
+													<p className="text-sm text-gray-700 leading-relaxed">{selectedEvent.whatThisMeans}</p>
+												</div>
+											)}
+											{selectedEvent.marketImpact && (
+												<div>
+													<h3 className="font-semibold mb-2 text-sm uppercase tracking-wide text-gray-900">Market Impact</h3>
+													<p className="text-sm text-gray-700 leading-relaxed">{selectedEvent.marketImpact}</p>
+												</div>
+											)}
+											{selectedEvent.crossAssetImpact && (
+												<div>
+													<h3 className="font-semibold mb-2 text-sm uppercase tracking-wide text-gray-900">Cross-Asset Impact</h3>
+													<p className="text-sm text-gray-700 leading-relaxed">{selectedEvent.crossAssetImpact}</p>
+												</div>
+											)}
+										</div>
+									)}
 
 									{selectedEvent.aiRelevanceScore && (
 										<div className="border-t pt-4">
@@ -1575,7 +1745,7 @@ export default function Dashboard() {
 														{selectedEvent.newsUrl && (
 															<div className="">
 																<a href={selectedEvent.newsUrl} target="_blank" rel="noopener noreferrer">
-																	<Button size="sm" className='bg-[#FF0000]' >Open Source</Button>
+																	<Button size="sm" className='bg-[#1c6eff]' >Open Source</Button>
 																</a>
 															</div>
 														)}
@@ -1601,7 +1771,7 @@ export default function Dashboard() {
 									)}
 
 									<div className="mt-6 flex justify-end">
-										<Button onClick={() => setSelectedEvent(null)} className="bg-[#FF0000]">Close</Button>
+										<Button onClick={() => setSelectedEvent(null)} className="bg-[#1c6eff]">Close</Button>
 									</div>
 								</div>
 							</div>
@@ -1694,7 +1864,7 @@ export default function Dashboard() {
 															{modalEvent.newsUrl && (
 																<div className="">
 																	<a href={modalEvent.newsUrl} target="_blank" rel="noopener noreferrer">
-																		<Button size="sm" className='bg-[#FF0000]' >Open Source</Button>
+																		<Button size="sm" className='bg-[#1c6eff]' >Open Source</Button>
 																	</a>
 																</div>
 															)}
@@ -1744,7 +1914,7 @@ export default function Dashboard() {
 									</div>
 
 									<div className="mt-6 flex justify-end ">
-										<Button onClick={() => setModalEvent(null)} className="bg-[#FF0000]">Close</Button>
+										<Button onClick={() => setModalEvent(null)} className="bg-[#1c6eff]">Close</Button>
 									</div>
 								</div>
 							</div>

@@ -18,7 +18,7 @@ if (fs.existsSync(envPath)) {
 const { connectDB, disconnectDB } = require('../src/config/database');
 const { initRedis, getRedisClient, closeRedis } = require('../src/config/redis');
 const { performBackfillRun } = require('../src/services/calendarSync');
-const { isGroqRateLimited } = require('../src/services/groq');
+const { isGenaiRateLimited } = require('../src/services/genai');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -53,8 +53,8 @@ async function run() {
 
   while (runCount < maxRuns) {
     try {
-      if (isGroqRateLimited()) {
-        console.warn('Groq rate limit is active; pausing backfill run');
+      if (isGenaiRateLimited()) {
+        console.warn('GenAI rate limit is active; pausing backfill run');
         break;
       }
 
