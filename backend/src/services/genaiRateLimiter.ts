@@ -15,9 +15,9 @@ const GENAI_COOLDOWN_KEY = 'genai:rate:cooldown';
 
 // Conservative limits (adjust based on tier)
 // Google free tier is ~15 RPM; adjust with env vars: GENAI_RPM_LIMIT, GENAI_MIN_DELAY_MS
-const MAX_REQUESTS_PER_MINUTE = parseInt(process.env.GENAI_RPM_LIMIT || '15', 10);
+const MAX_REQUESTS_PER_MINUTE = parseInt(process.env.GENAI_RPM_LIMIT || '30', 10);
 const WINDOW_SIZE_MS = 60 * 1000; // 1 minute
-const MIN_DELAY_BETWEEN_REQUESTS_MS = parseInt(process.env.GENAI_MIN_DELAY_MS || '4000', 10); // 4s = ~15 RPM max
+const MIN_DELAY_BETWEEN_REQUESTS_MS = parseInt(process.env.GENAI_MIN_DELAY_MS || '2000', 10); // 2s = ~30 RPM max
 
 // In-memory fallback when Redis is unavailable
 let inMemoryTokens = MAX_REQUESTS_PER_MINUTE;

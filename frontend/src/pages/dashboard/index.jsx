@@ -218,6 +218,19 @@ export default function Dashboard() {
 						? { ...e, ...data.data }
 						: e
 				));
+				// Update the event in events state (paginated list)
+				setEvents(prev => prev.map(e => 
+					(e.eventId === eventIdentifier || e._id === eventIdentifier) 
+						? { ...e, ...data.data }
+						: e
+				));
+				// Also update the modal if it's open for this event
+				setSelectedEvent(prev => {
+					if (!prev) return prev;
+					const id = prev.eventId || prev._id;
+					if (id === eventIdentifier) return { ...prev, ...data.data };
+					return prev;
+				});
 				setAnalysisFailed(prev => ({ ...prev, [eventIdentifier]: false }));
 			} else {
 				// Rate limited or other error
@@ -624,18 +637,19 @@ export default function Dashboard() {
 		}, 50);
 	};
 
-	// Open the trial-ended modal when relevant
+	// Open the trial-ended modal when relevant and redirect blocked users to settings
 	useEffect(() => {
 		try {
 			const sub = user?.subscription;
 			console.log('Dashboard subscription check', { sub, bannerDismissed });
 			if (!sub) return;
-// Determine trial end date (prefer explicit, otherwise infer 3-day trial from account creation)
-            const TRIAL_DAYS = 3;
-            const trialEnds = sub?.trialEndsAt ? new Date(sub.trialEndsAt) : (sub?.createdAt ? new Date(new Date(sub.createdAt).getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000) : null);
-            const trialExpired = sub.status === 'trial' && (trialEnds ? new Date() >= trialEnds : true) && sub.plan === 'free';
-            if (trialExpired) {
-                console.log('Trial expired detected (inferred), showing modal');
+
+			// Determine trial end date (prefer explicit, otherwise infer 3-day trial from account creation)
+			const TRIAL_DAYS = 3;
+			const trialEnds = sub?.trialEndsAt ? new Date(sub.trialEndsAt) : (sub?.createdAt ? new Date(new Date(sub.createdAt).getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000) : null);
+			const trialExpired = sub.status === 'trial' && (trialEnds ? new Date() >= trialEnds : true) && sub.plan === 'free';
+			if (trialExpired) {
+				console.log('Trial expired detected (inferred), showing modal');
 				setShowTrialEndedModal(true);
 			}
 
@@ -647,10 +661,21 @@ export default function Dashboard() {
 				console.log('Showing upgrade banner');
 				setShowUpgradeBanner(true);
 			}
+
+			// If user is blocked (trial expired or non-active paid plan), show upgrade UI but do NOT auto-redirect
+			const isActive = sub.status === 'active';
+			const isPaidPlan = sub.plan && sub.plan !== 'free';
+			const isBlocked = trialExpired || (isPaidPlan && !isActive);
+			if (isBlocked) {
+				console.log('Blocked user detected — showing upgrade modal/banner but not redirecting');
+				// Ensure modal/banner visibility; user can navigate to settings manually via CTA
+				if (trialExpired) setShowTrialEndedModal(true);
+				if (!bannerDismissed) setShowUpgradeBanner(true);
+			}
 		} catch (e) {
 			console.error('Error checking trial status', e);
 		}
-	}, [user, bannerDismissed]);
+	}, [user, bannerDismissed, navigate]);
 
 
 	const handleUpgrade = async (planId) => {
@@ -897,6 +922,28 @@ export default function Dashboard() {
 			timeZone: displayTimezone
 		});
 	}, [displayTimezone]);
+
+	// If the user is blocked (trial expired or not active) do not render dashboard content.
+	// This prevents bypassing the overlay by hiding it via devtools—users are redirected to settings.
+	const _sub = user?.subscription;
+	const _TRIAL_DAYS = 3;
+	const _trialEnds = _sub?.trialEndsAt ? new Date(_sub.trialEndsAt) : (_sub?.createdAt ? new Date(new Date(_sub.createdAt).getTime() + _TRIAL_DAYS * 24 * 60 * 60 * 1000) : null);
+	const _trialExpired = _sub?.status === 'trial' && (_trialEnds ? new Date() >= _trialEnds : true) && _sub?.plan === 'free';
+	const _isActive = _sub?.status === 'active';
+	const _isPaid = _sub?.plan && _sub?.plan !== 'free';
+	const _isBlocked = user && _sub && (_trialExpired || (_isPaid && !_isActive));
+	if (_isBlocked) {
+		return (
+			<div className="min-h-screen flex items-center justify-center">
+				<div className="text-center p-6 rounded border bg-white shadow">
+					<img src="/smlogo.png" alt="SMC" className="mx-auto w-16 h-16 mb-4" />
+					<h2 className="text-lg font-bold mb-2">Subscription required</h2>
+					<p className="text-sm text-gray-600 mb-4">Please upgrade or renew your subscription to access the dashboard.</p>
+					<Button onClick={() => navigate('/settings')}>Manage subscription</Button>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className="min-h-screen bg-gray-50" style={{ zoom: '90%' }}>
@@ -1495,7 +1542,7 @@ export default function Dashboard() {
 																						{event.executionNotes && (
 																							<p className="mt-2 text-sm">Execution: <span className="font-medium">{event.executionNotes}</span></p>
 																						)}
-																						<Button size="sm" onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); }} className="mt-5">View more</Button>
+																						<Button size="sm" onClick={(e) => { e.stopPropagation(); setSelectedEvent(event); if (!event.whatThisMeans || !event.marketImpact || !event.crossAssetImpact) { generateAnalysis(event); } }} className="mt-5">View more</Button>
 																					</div> */}
 																				</div>
 																			</td>

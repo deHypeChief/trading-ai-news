@@ -95,8 +95,8 @@ async function genaiGenerateWithRetry(
       
       // If Google returned a 429, set cooldown to prevent further requests
       if ((code === 429 || code === 'RESOURCE_EXHAUSTED') && err?.code !== 'GENAI_RATE_LIMIT') {
-        console.warn('[GenAI] Google API rate limit hit, setting 60s cooldown');
-        await setGenaiCooldown(60000);
+        console.warn('[GenAI] Google API rate limit hit, setting 10s cooldown');
+        await setGenaiCooldown(10000);
       }
       
       if (!isRateLimit || i === attempts - 1) break;
@@ -167,8 +167,8 @@ async function genaiGenerateStreamWithRetry(
       
       // If Google returned a 429, set cooldown to prevent further requests
       if ((code === 429 || code === 'RESOURCE_EXHAUSTED') && err?.code !== 'GENAI_RATE_LIMIT') {
-        console.warn('[GenAI] Google API rate limit hit (stream), setting 60s cooldown');
-        await setGenaiCooldown(60000);
+        console.warn('[GenAI] Google API rate limit hit (stream), setting 10s cooldown');
+        await setGenaiCooldown(10000);
       }
       
       if (!isRateLimit || i === attempts - 1) break;
@@ -259,7 +259,6 @@ ${pastEventsContext}`;
         maxOutputTokens: 500,
       },
       responseMimeType: 'application/json',
-      tools: [{ googleSearch: {} }],
     };
 
     const response = await genaiGenerateWithRetry('gemini-2.0-flash', contents, config, 3, 60_000, false);
@@ -324,7 +323,6 @@ ${pastEventsContext}`;
         maxOutputTokens: 400,
       },
       responseMimeType: 'application/json',
-      tools: [{ googleSearch: {} }],
     };
 
     const response = await genaiGenerateWithRetry('gemini-2.0-flash', contents, config, 3, 60_000, false);
@@ -460,9 +458,8 @@ this should be based on the probability of the dollar expanding or consolidating
 {
   "anticipatedVolatility": number (1-10 scale based on DXY impact probability),
   "whatThisMeans": "2-sentence explanation of what the data means for the economy in plain English",
-  "marketImpact": "Relationship based on the economic event and the currency affected, all explanation should be brief except for the currency directly affected)
-Major Currency affected(could be EURO/POUND/YEN ETC but based on the event : [Direction + reason ]",
-  "crossAssetImpact": "in a single paragraph that is straight to the point without losing key facts touch on the effects on MAJORS,GOLD,STOCKS : [ Direction + Reason ]"
+  "marketImpact": "Major currency affected (EURO/POUND/YEN etc based on event) with direction and reason",
+  "crossAssetImpact": "Effects on MAJORS, GOLD, STOCKS in a single paragraph: direction and reason"
 }
 
 Focus on fundamental/macro analysis for novice traders. Volatility scale: 1=minimal DXY impact, 10=extreme DXY expansion/consolidation.
@@ -487,7 +484,6 @@ ${pastEventsContext}`;
         maxOutputTokens: 800,
       },
       responseMimeType: 'application/json',
-      tools: [{ googleSearch: {} }],
     };
 
     const response = await genaiGenerateWithRetry('gemini-2.0-flash', contents, config, 3, 60_000, true);
@@ -497,18 +493,32 @@ ${pastEventsContext}`;
       throw new Error('No response from Google Gemini');
     }
 
-    const parsed = JSON.parse(text) as StructuredAnalysisResult;
+    console.log('Raw Gemini response:', text); // Debug log
+
+    let parsed = JSON.parse(text);
+    
+    // Handle case where Gemini returns an array
+    if (Array.isArray(parsed)) {
+      parsed = parsed[0];
+    }
+
+    // Ensure it's the expected object structure
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error('Invalid response structure');
+    }
+
+    const result = parsed as StructuredAnalysisResult;
 
     // Validate response structure
     if (
-      typeof parsed.anticipatedVolatility !== 'number' ||
-      parsed.anticipatedVolatility < 1 || parsed.anticipatedVolatility > 10 ||
-      !parsed.whatThisMeans || !parsed.marketImpact || !parsed.crossAssetImpact
+      typeof result.anticipatedVolatility !== 'number' ||
+      result.anticipatedVolatility < 1 || result.anticipatedVolatility > 10 ||
+      !result.whatThisMeans || !result.marketImpact || !result.crossAssetImpact
     ) {
       throw new Error('Invalid structured analysis response format');
     }
 
-    return parsed;
+    return result;
   } catch (error: any) {
     console.error('Google Gemini structured analysis failed:', error?.message || error);
     
